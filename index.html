@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flashy Defense</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud">
+      <div class="stat">🌙 Orb: <span id="orb-status">3/3</span></div>
+      <div class="stat">🌊 Wave: <span id="wave-num">1</span></div>
+      <div class="stat">❤️ Flashy: <span id="hp">100</span></div>
+      <div class="stat">✨ <span id="sparkle-count">50</span></div>
+      <div class="stat">👾 Left: <span id="enemy-count">0</span></div>
+      <div class="stat" id="intermission"></div>
+    </div>
+
+    <div id="weapon-bar">
+      <div class="weapon-slot active" data-type="dart">1<br/>Dart<br/>25✨</div>
+      <div class="weapon-slot locked" data-type="bubble">2<br/>Bubble<br/>50✨</div>
+      <div class="weapon-slot locked" data-type="marshmallow">3<br/>Marsh<br/>75✨</div>
+      <div class="weapon-slot locked" data-type="missile">4<br/>Missile<br/>100✨</div>
+      <div class="weapon-hint">Press <b>T</b> to place a turret · 1/2/3/4 to switch type</div>
+    </div>
+
+    <div id="crosshair" class="hidden">+</div>
+    <div id="view-indicator">View: <span id="view-name">top-down</span> <span class="hint">(press V)</span></div>
+    <div id="message" class="hidden"></div>
+
+    <div id="start-screen">
+      <h1>🦥 Flashy Defense</h1>
+      <p class="subtitle">A Toy Story-style night defense adventure</p>
+      <div class="story">
+        <p>Chelsea, age 10, is fast asleep. Her sassy older sister, the <b>Sassinator</b>,
+        has unleashed her evil twin stuffies <b>Skyler &amp; Honey</b> and their minions
+        to steal Chelsea's <b>Orb of Power</b> — actually a moon nightlight, but shhh.</p>
+        <p>Only <b>Flashy, the Mighty Sloth</b>, can save the night.</p>
+      </div>
+      <div class="controls">
+        <h3>Controls</h3>
+        <ul>
+          <li><b>WASD</b> — Move Flashy</li>
+          <li><b>Mouse</b> — Aim · <b>Left Click</b> — Shoot foam darts</li>
+          <li><b>T</b> — Toggle turret placement · click floor to place</li>
+          <li><b>1 / 2 / 3 / 4</b> — Pick turret type</li>
+          <li><b>V</b> — Cycle camera (first-person → top-down → over-shoulder)</li>
+          <li><b>M</b> — Mute / un-mute sound</li>
+          <li><b>Space</b> — Hop (for style)</li>
+        </ul>
+        <p class="tip">💨 Every now and then Chelsea farts in her sleep and a power-up appears near the bed. Grab it!</p>
+      </div>
+      <button id="start-btn">Start Wave 1</button>
+    </div>
+
+    <div id="end-screen" class="hidden">
+      <h1 id="end-title">Game Over</h1>
+      <p id="end-text"></p>
+      <button onclick="location.reload()">Try Again</button>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #0d0822;
+  color: #f4eafc;
+  user-select: none;
+}
+
+#game-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+#game-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+/* HUD top bar */
+#hud {
+  position: absolute; top: 12px; left: 12px; right: 12px;
+  display: flex; gap: 10px; flex-wrap: wrap;
+  pointer-events: none;
+  z-index: 5;
+}
+.stat {
+  background: rgba(20, 12, 40, 0.78);
+  border: 1px solid rgba(255, 180, 220, 0.35);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+#intermission { background: rgba(60, 30, 100, 0.85); color: #ffe9a3; }
+
+/* Weapon bar */
+#weapon-bar {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: center;
+  background: rgba(20, 12, 40, 0.78);
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 180, 220, 0.3);
+  z-index: 5;
+}
+.weapon-slot {
+  width: 70px; height: 70px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; text-align: center; line-height: 1.25;
+  background: rgba(255,255,255,0.05);
+  font-weight: 600;
+}
+.weapon-slot.active { border-color: #ffd25f; box-shadow: 0 0 18px rgba(255,210,95,0.5); }
+.weapon-slot.locked { opacity: 0.35; }
+.weapon-hint { font-size: 12px; max-width: 180px; opacity: 0.85; line-height: 1.3; }
+
+/* Floating message */
+#message {
+  position: absolute; top: 25%; left: 50%; transform: translateX(-50%);
+  background: rgba(40, 20, 80, 0.9);
+  border: 2px solid #ffd25f;
+  padding: 14px 22px;
+  border-radius: 16px;
+  font-size: 22px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 8;
+  white-space: nowrap;
+  transition: opacity 0.3s;
+}
+#message.hidden { opacity: 0; }
+
+/* Start & end screens */
+#start-screen, #end-screen {
+  position: absolute; inset: 0;
+  background: linear-gradient(160deg, #2a1456, #0d0822 70%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 20;
+  text-align: center;
+  padding: 20px;
+}
+#start-screen h1, #end-screen h1 {
+  margin: 0;
+  font-size: 56px;
+  background: linear-gradient(90deg, #ffd25f, #ff7eb3, #88c9ff);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle { opacity: 0.85; margin-top: 4px; }
+.story { max-width: 600px; line-height: 1.5; margin: 18px 0; opacity: 0.92; }
+.controls {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,180,220,0.25);
+  padding: 16px 24px;
+  border-radius: 12px;
+  margin: 10px 0 24px;
+  max-width: 460px;
+  text-align: left;
+}
+.controls h3 { margin: 0 0 8px; color: #ffd25f; }
+.controls ul { margin: 0; padding-left: 20px; line-height: 1.7; }
+.tip { margin-top: 10px; font-size: 14px; opacity: 0.85; }
+
+button {
+  padding: 14px 36px;
+  font-size: 18px;
+  font-weight: 700;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  background: linear-gradient(90deg, #ffd25f, #ff7eb3);
+  color: #2a0d3a;
+  box-shadow: 0 6px 20px rgba(255, 126, 179, 0.4);
+  transition: transform 0.1s;
+}
+button:hover { transform: translateY(-2px); }
+button:active { transform: translateY(0); }
+
+#crosshair {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  font-size: 36px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8), 0 0 2px black;
+  pointer-events: none;
+  z-index: 6;
+  font-weight: 100;
+}
+#view-indicator {
+  position: absolute; bottom: 16px; right: 16px;
+  background: rgba(20, 12, 40, 0.78);
+  border: 1px solid rgba(255, 180, 220, 0.3);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 5;
+  pointer-events: none;
+}
+#view-indicator .hint { opacity: 0.6; font-weight: 400; }
+
+.hidden { display: none !important; }
