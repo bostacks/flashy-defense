@@ -14,6 +14,76 @@
   </script>
 </head>
 <body>
+
+  <!-- ========== LOGIN GATE ========== -->
+  <div id="login-screen" style="
+    position:fixed; inset:0; z-index:999;
+    background:linear-gradient(160deg,#2a1456,#0d0822 70%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:-apple-system,'Segoe UI',Roboto,sans-serif; color:#f4eafc; gap:20px;
+  ">
+    <div style="font-size:56px">🦥</div>
+    <h1 style="margin:0;font-size:32px;font-weight:700;
+      background:linear-gradient(90deg,#ffd25f,#ff7eb3,#88c9ff);
+      -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">
+      Flashy Defense
+    </h1>
+    <p style="margin:0;opacity:.7;font-size:14px">Enter the password to play</p>
+    <input id="login-input" type="password" placeholder="Password" autofocus style="
+      padding:12px 20px; font-size:18px; border-radius:999px; border:2px solid rgba(255,180,220,.4);
+      background:rgba(255,255,255,.07); color:#f4eafc; outline:none; text-align:center;
+      width:240px; letter-spacing:.12em;
+    "/>
+    <button id="login-btn" style="
+      padding:13px 40px; font-size:17px; font-weight:700; border:none; border-radius:999px;
+      cursor:pointer; background:linear-gradient(90deg,#ffd25f,#ff7eb3);
+      color:#2a0d3a; box-shadow:0 6px 20px rgba(255,126,179,.4);
+    ">Let me in 🌙</button>
+    <p id="login-error" style="margin:0;color:#ff7eb3;font-size:13px;opacity:0;transition:opacity .2s">
+      Wrong password — try again
+    </p>
+  </div>
+
+  <script>
+    const HASH = '118776f9cec61a2321298b554c03119710ecff8a906cb4de5880752a8d0b59ed';
+    const SESSION_KEY = 'fd_auth';
+    const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+    async function sha256(str) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    function unlock() {
+      document.getElementById('login-screen').style.display = 'none';
+      localStorage.setItem(SESSION_KEY, Date.now());
+    }
+
+    // Check existing session
+    const saved = parseInt(localStorage.getItem(SESSION_KEY) || '0');
+    if (Date.now() - saved < 24 * 60 * 60 * 1000) { unlock(); }
+
+    async function tryLogin() {
+      const val = document.getElementById('login-input').value;
+      const hash = await sha256(val);
+      if (hash === HASH) {
+        unlock();
+      } else {
+        const err = document.getElementById('login-error');
+        err.style.opacity = 1;
+        setTimeout(() => err.style.opacity = 0, 2200);
+        document.getElementById('login-input').value = '';
+        document.getElementById('login-input').focus();
+      }
+    }
+
+    document.getElementById('login-btn').addEventListener('click', tryLogin);
+    document.getElementById('login-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') tryLogin();
+    });
+  </script>
+  <!-- ========== END LOGIN GATE ========== -->
+
   <div id="game-container">
     <canvas id="game-canvas"></canvas>
 
