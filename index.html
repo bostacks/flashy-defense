@@ -4,146 +4,88 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Flashy Defense</title>
-  <link rel="stylesheet" href="style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-      }
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #2a1456, #0d0822 70%);
+      font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      color: #f4eafc; gap: 20px;
     }
-  </script>
+    .emoji  { font-size: 64px; line-height: 1; }
+    h1 {
+      font-size: 32px; font-weight: 700;
+      background: linear-gradient(90deg, #ffd25f, #ff7eb3, #88c9ff);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hint { font-size: 14px; opacity: .65; }
+    input {
+      padding: 13px 22px; font-size: 18px; width: 240px;
+      border-radius: 999px; border: 2px solid rgba(255,180,220,.45);
+      background: rgba(255,255,255,.08); color: #f4eafc;
+      outline: none; text-align: center; letter-spacing: .1em;
+    }
+    input:focus { border-color: rgba(255,180,220,.85); }
+    button {
+      padding: 13px 44px; font-size: 17px; font-weight: 700;
+      border: none; border-radius: 999px; cursor: pointer;
+      background: linear-gradient(90deg, #ffd25f, #ff7eb3);
+      color: #2a0d3a; box-shadow: 0 6px 20px rgba(255,126,179,.4);
+      transition: transform .1s;
+    }
+    button:hover  { transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    #error {
+      font-size: 13px; color: #ff7eb3;
+      min-height: 1.2em; opacity: 0; transition: opacity .2s;
+    }
+  </style>
 </head>
 <body>
-
-  <!-- ========== LOGIN GATE ========== -->
-  <div id="login-screen" style="
-    position:fixed; inset:0; z-index:999;
-    background:linear-gradient(160deg,#2a1456,#0d0822 70%);
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    font-family:-apple-system,'Segoe UI',Roboto,sans-serif; color:#f4eafc; gap:20px;
-  ">
-    <div style="font-size:56px">🦥</div>
-    <h1 style="margin:0;font-size:32px;font-weight:700;
-      background:linear-gradient(90deg,#ffd25f,#ff7eb3,#88c9ff);
-      -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">
-      Flashy Defense
-    </h1>
-    <p style="margin:0;opacity:.7;font-size:14px">Enter the password to play</p>
-    <input id="login-input" type="password" placeholder="Password" autofocus style="
-      padding:12px 20px; font-size:18px; border-radius:999px; border:2px solid rgba(255,180,220,.4);
-      background:rgba(255,255,255,.07); color:#f4eafc; outline:none; text-align:center;
-      width:240px; letter-spacing:.12em;
-    "/>
-    <button id="login-btn" style="
-      padding:13px 40px; font-size:17px; font-weight:700; border:none; border-radius:999px;
-      cursor:pointer; background:linear-gradient(90deg,#ffd25f,#ff7eb3);
-      color:#2a0d3a; box-shadow:0 6px 20px rgba(255,126,179,.4);
-    ">Let me in 🌙</button>
-    <p id="login-error" style="margin:0;color:#ff7eb3;font-size:13px;opacity:0;transition:opacity .2s">
-      Wrong password — try again
-    </p>
-  </div>
+  <div class="emoji">🦥</div>
+  <h1>Flashy Defense</h1>
+  <p class="hint">Enter the password to play</p>
+  <input id="pw" type="password" placeholder="Password" autofocus />
+  <button id="btn">Let me in 🌙</button>
+  <p id="error">Wrong password — try again</p>
 
   <script>
-    // Synchronous check — no crypto.subtle, works in every context
-    const SESSION_KEY = 'fd_auth';
+    // Skip login if session is still valid
+    if (Date.now() - parseInt(localStorage.getItem('fd_auth') || 0) < 86400000) {
+      location.replace('game.html');
+    }
 
     function checkPw(s) {
-      // scramble the input and compare to a stored scramble of the real password
       if (s.length !== 7) return false;
-      const k = [54,55,50,6,0,4,25]; // XOR key
-      const t = [85,84,81,51,49,51,33]; // target: 'ccc5178' XOR k
+      const k = [54, 55, 50, 6,  0,  4, 25];
+      const t = [85, 84, 81, 51, 49, 51, 33];
       for (let i = 0; i < 7; i++) {
         if ((s.charCodeAt(i) ^ k[i]) !== t[i]) return false;
       }
       return true;
     }
 
-    function unlock() {
-      document.getElementById('login-screen').style.display = 'none';
-      localStorage.setItem(SESSION_KEY, Date.now());
-    }
-
-    // Resume session if still valid (24 h)
-    const saved = parseInt(localStorage.getItem(SESSION_KEY) || '0');
-    if (Date.now() - saved < 86400000) unlock();
-
-    function tryLogin() {
-      const val = document.getElementById('login-input').value;
+    function attempt() {
+      const val = document.getElementById('pw').value;
       if (checkPw(val)) {
-        unlock();
+        localStorage.setItem('fd_auth', Date.now());
+        location.replace('game.html');
       } else {
-        const err = document.getElementById('login-error');
+        const err = document.getElementById('error');
         err.style.opacity = 1;
-        setTimeout(() => err.style.opacity = 0, 2200);
-        document.getElementById('login-input').value = '';
-        document.getElementById('login-input').focus();
+        setTimeout(() => err.style.opacity = 0, 2000);
+        document.getElementById('pw').value = '';
+        document.getElementById('pw').focus();
       }
     }
 
-    document.getElementById('login-btn').addEventListener('click', tryLogin);
-    document.getElementById('login-input').addEventListener('keydown', e => {
-      if (e.key === 'Enter') tryLogin();
+    document.getElementById('btn').addEventListener('click', attempt);
+    document.getElementById('pw').addEventListener('keydown', e => {
+      if (e.key === 'Enter') attempt();
     });
   </script>
-  <!-- ========== END LOGIN GATE ========== -->
-
-  <div id="game-container">
-    <canvas id="game-canvas"></canvas>
-
-    <div id="hud">
-      <div class="stat">🌙 Orb: <span id="orb-status">3/3</span></div>
-      <div class="stat">🌊 Wave: <span id="wave-num">1</span></div>
-      <div class="stat">❤️ Flashy: <span id="hp">100</span></div>
-      <div class="stat">✨ <span id="sparkle-count">50</span></div>
-      <div class="stat">👾 Left: <span id="enemy-count">0</span></div>
-      <div class="stat" id="intermission"></div>
-    </div>
-
-    <div id="weapon-bar">
-      <div class="weapon-slot active" data-type="dart">1<br/>Dart<br/>25✨</div>
-      <div class="weapon-slot locked" data-type="bubble">2<br/>Bubble<br/>50✨</div>
-      <div class="weapon-slot locked" data-type="marshmallow">3<br/>Marsh<br/>75✨</div>
-      <div class="weapon-slot locked" data-type="missile">4<br/>Missile<br/>100✨</div>
-      <div class="weapon-hint">Press <b>T</b> to place a turret · 1/2/3/4 to switch type</div>
-    </div>
-
-    <div id="crosshair" class="hidden">+</div>
-    <div id="view-indicator">View: <span id="view-name">top-down</span> <span class="hint">(press V)</span></div>
-    <div id="message" class="hidden"></div>
-
-    <div id="start-screen">
-      <h1>🦥 Flashy Defense</h1>
-      <p class="subtitle">A Toy Story-style night defense adventure</p>
-      <div class="story">
-        <p>Chelsea, age 10, is fast asleep. Her sassy older sister, the <b>Sassinator</b>,
-        has unleashed her evil twin stuffies <b>Skyler &amp; Honey</b> and their minions
-        to steal Chelsea's <b>Orb of Power</b> — actually a moon nightlight, but shhh.</p>
-        <p>Only <b>Flashy, the Mighty Sloth</b>, can save the night.</p>
-      </div>
-      <div class="controls">
-        <h3>Controls</h3>
-        <ul>
-          <li><b>WASD</b> — Move Flashy</li>
-          <li><b>Mouse</b> — Aim · <b>Left Click</b> — Shoot foam darts</li>
-          <li><b>T</b> — Toggle turret placement · click floor to place</li>
-          <li><b>1 / 2 / 3 / 4</b> — Pick turret type</li>
-          <li><b>V</b> — Cycle camera (first-person → top-down → over-shoulder)</li>
-          <li><b>M</b> — Mute / un-mute sound</li>
-          <li><b>Space</b> — Hop (for style)</li>
-        </ul>
-        <p class="tip">💨 Every now and then Chelsea farts in her sleep and a power-up appears near the bed. Grab it!</p>
-      </div>
-      <button id="start-btn">Start Wave 1</button>
-    </div>
-
-    <div id="end-screen" class="hidden">
-      <h1 id="end-title">Game Over</h1>
-      <p id="end-text"></p>
-      <button onclick="location.reload()">Try Again</button>
-    </div>
-  </div>
-
-  <script type="module" src="game.js"></script>
 </body>
 </html>
