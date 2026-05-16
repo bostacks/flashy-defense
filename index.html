@@ -45,13 +45,18 @@
   </div>
 
   <script>
-    const HASH = '118776f9cec61a2321298b554c03119710ecff8a906cb4de5880752a8d0b59ed';
+    // Synchronous check — no crypto.subtle, works in every context
     const SESSION_KEY = 'fd_auth';
-    const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-    async function sha256(str) {
-      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    function checkPw(s) {
+      // scramble the input and compare to a stored scramble of the real password
+      if (s.length !== 7) return false;
+      const k = [54,55,50,6,0,4,25]; // XOR key
+      const t = [85,84,81,51,49,51,33]; // target: 'ccc5178' XOR k
+      for (let i = 0; i < 7; i++) {
+        if ((s.charCodeAt(i) ^ k[i]) !== t[i]) return false;
+      }
+      return true;
     }
 
     function unlock() {
@@ -59,14 +64,13 @@
       localStorage.setItem(SESSION_KEY, Date.now());
     }
 
-    // Check existing session
+    // Resume session if still valid (24 h)
     const saved = parseInt(localStorage.getItem(SESSION_KEY) || '0');
-    if (Date.now() - saved < 24 * 60 * 60 * 1000) { unlock(); }
+    if (Date.now() - saved < 86400000) unlock();
 
-    async function tryLogin() {
+    function tryLogin() {
       const val = document.getElementById('login-input').value;
-      const hash = await sha256(val);
-      if (hash === HASH) {
+      if (checkPw(val)) {
         unlock();
       } else {
         const err = document.getElementById('login-error');
