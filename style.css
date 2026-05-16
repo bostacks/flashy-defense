@@ -71,10 +71,28 @@ html, body {
 #start-screen, #end-screen {
   position: absolute; inset: 0;
   background: linear-gradient(160deg, #2a1456, #0d0822 70%);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
   z-index: 20;
   text-align: center;
-  padding: 20px;
+  padding: 30px 20px 40px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Push content toward vertical center when it fits, but allow scrolling when it doesn't */
+#start-screen > *:first-child, #end-screen > *:first-child { margin-top: auto; }
+#start-screen > *:last-child,  #end-screen > *:last-child  { margin-bottom: auto; }
+
+/* Scrollbar styling so it doesn't look out of place */
+#start-screen::-webkit-scrollbar, #end-screen::-webkit-scrollbar { width: 10px; }
+#start-screen::-webkit-scrollbar-track, #end-screen::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.04);
+}
+#start-screen::-webkit-scrollbar-thumb, #end-screen::-webkit-scrollbar-thumb {
+  background: rgba(255,180,220,0.35);
+  border-radius: 999px;
+}
+#start-screen::-webkit-scrollbar-thumb:hover, #end-screen::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,180,220,0.55);
 }
 #start-screen h1, #end-screen h1 {
   margin: 0;
@@ -177,10 +195,7 @@ button:active { transform: translateY(0); }
   padding: 14px 20px;
   border-radius: 12px;
   margin: 16px 0 8px;
-  max-width: 460px;
-  width: 460px;
-  max-height: 220px;
-  overflow-y: auto;
+  width: min(460px, calc(100vw - 60px));
 }
 .highscores h3 {
   margin: 0 0 8px;
