@@ -672,14 +672,14 @@ const state = {
   wave: 0,
   inIntermission: true,
   intermissionTime: 3.5,
-  sparkles: 60,
+  sparkles: 40,
   orbLives: 3,
   enemiesToSpawn: 0,
   spawnTimer: 0,
   spawnInterval: 1.5,
   currentTypes: ['minion'],
   currentReward: 30,
-  fartTimer: 10,
+  fartTimer: 14,
   enemies: [],
   projectiles: [],
   turrets: [],
@@ -695,19 +695,25 @@ const state = {
   placingTurret: false,
   tempBuffs: [],
   tripleShot: false,
-  camMode: 'topdown',      // 'topdown' | 'thirdperson' | 'firstperson'
-  camYaw: Math.PI,         // facing -Z (north) initially
-  camPitch: -0.15,         // slightly looking down
+  camMode: 'topdown',
+  camYaw: Math.PI,
+  camPitch: -0.15,
+  // High-score tracking
+  playerName: '',
+  kills: 0,
+  totalSparklesEarned: 0,
 };
 
-// ---------- Levels ----------
+// ---------- Levels (re-tuned: more enemies, faster spawns, tougher mix) ----------
 const LEVELS = [
-  { count: 6,  spawnInterval: 1.6, types: ['minion'],                            reward: 30 },
-  { count: 10, spawnInterval: 1.3, types: ['minion'],                            reward: 45, unlock: 'bubble' },
-  { count: 14, spawnInterval: 1.1, types: ['minion', 'para'],                    reward: 60, unlock: 'missile' },
-  { count: 18, spawnInterval: 1.0, types: ['minion', 'skyler', 'honey', 'para'], reward: 75, unlock: 'marshmallow' },
-  { count: 24, spawnInterval: 0.85,types: ['minion', 'skyler', 'honey', 'para'], reward: 100 },
-  { count: 30, spawnInterval: 0.75,types: ['minion', 'skyler', 'honey', 'para', 'sassinator'], reward: 150 },
+  { count:  8, spawnInterval: 1.40, types: ['minion'],                                       reward: 30 },
+  { count: 14, spawnInterval: 1.10, types: ['minion'],                                       reward: 45, unlock: 'bubble' },
+  { count: 20, spawnInterval: 0.90, types: ['minion', 'para', 'skyler'],                     reward: 60, unlock: 'missile' },
+  { count: 28, spawnInterval: 0.75, types: ['minion', 'skyler', 'honey', 'para'],            reward: 80, unlock: 'marshmallow' },
+  { count: 36, spawnInterval: 0.65, types: ['minion', 'skyler', 'honey', 'para'],            reward: 110 },
+  { count: 44, spawnInterval: 0.55, types: ['minion', 'skyler', 'honey', 'para', 'sassinator'], reward: 160 },
+  { count: 54, spawnInterval: 0.50, types: ['minion', 'skyler', 'honey', 'para', 'sassinator'], reward: 220 },
+  { count: 66, spawnInterval: 0.45, types: ['skyler', 'honey', 'para', 'sassinator'],        reward: 300 },
 ];
 
 // ---------- Stuffed-animal species builders ----------
@@ -1170,36 +1176,36 @@ function addPlushDetails(g, size) {
 
 // ---------- Enemies ----------
 function createEnemy(type, wave = 1) {
-  // Per-wave scaling: enemies get faster and bigger each wave
-  const speedMult = 1 + (wave - 1) * 0.13;
-  const sizeMult  = 1 + (wave - 1) * 0.09;
-  const hpMult    = 1 + (wave - 1) * 0.25;
+  // Per-wave scaling: enemies get faster, bigger, and much tankier each wave
+  const speedMult = 1 + (wave - 1) * 0.18;
+  const sizeMult  = 1 + (wave - 1) * 0.10;
+  const hpMult    = 1 + (wave - 1) * 0.38;
 
   let hp, speed, size, color, species, g;
   switch (type) {
     case 'skyler':
-      hp = 60 * hpMult; speed = 2.3 * speedMult; size = 1.25 * sizeMult;
+      hp = 75 * hpMult; speed = 2.6 * speedMult; size = 1.25 * sizeMult;
       color = 0x6aa9ff; species = 'bunny';
       g = makeBunny(size, color);
       break;
     case 'honey':
-      hp = 80 * hpMult; speed = 1.9 * speedMult; size = 1.35 * sizeMult;
+      hp = 110 * hpMult; speed = 2.1 * speedMult; size = 1.35 * sizeMult;
       color = 0xffb84d; species = 'bear';
       g = makeBear(size, color);
       break;
     case 'sassinator':
-      hp = 240 * hpMult; speed = 1.6 * speedMult; size = 1.85 * sizeMult;
+      hp = 320 * hpMult; speed = 1.8 * speedMult; size = 1.85 * sizeMult;
       color = 0xff4d8a; species = 'unicorn';
       g = makeUnicorn(size, color);
       break;
     case 'para':
-      hp = 30 * hpMult; speed = 2.2 * speedMult; size = 0.85 * sizeMult;
+      hp = 40 * hpMult; speed = 2.5 * speedMult; size = 0.85 * sizeMult;
       species = MINION_SPECIES[Math.floor(Math.random() * MINION_SPECIES.length)];
       color = MINION_COLORS[Math.floor(Math.random() * MINION_COLORS.length)];
       g = SPECIES_BUILDERS[species](size, color);
       break;
     default:
-      hp = 22 * hpMult; speed = 2.6 * speedMult; size = 0.85 * sizeMult;
+      hp = 30 * hpMult; speed = 2.9 * speedMult; size = 0.85 * sizeMult;
       species = MINION_SPECIES[Math.floor(Math.random() * MINION_SPECIES.length)];
       color = MINION_COLORS[Math.floor(Math.random() * MINION_COLORS.length)];
       g = SPECIES_BUILDERS[species](size, color);
@@ -1656,6 +1662,7 @@ function applyPickup(type) {
       break;
     case 'sparkles':
       state.sparkles += 30;
+      state.totalSparklesEarned += 30;
       break;
   }
   showMessage(PICKUP_INFO[type].label, 1.6);
@@ -1912,6 +1919,7 @@ function endWave() {
   state.inIntermission = true;
   state.intermissionTime = 10;
   state.sparkles += state.currentReward;
+  state.totalSparklesEarned += state.currentReward;
   showMessage(`✅ Wave ${state.wave} cleared! +${state.currentReward}✨  · Place turrets!`, 3.2);
   updateHUD();
 }
@@ -1920,11 +1928,90 @@ function gameOver(victory = false) {
   state.running = false;
   audio.stopMusic();
   audio.over();
+
+  // --- Compute final score ---
+  const wavesCleared = victory ? state.wave : Math.max(0, state.wave - 1);
+  const breakdown = {
+    waves:    wavesCleared * 200,
+    kills:    state.kills * 15,
+    sparkles: state.totalSparklesEarned,
+    orbBonus: state.orbLives * 1000,
+    victory:  victory ? 5000 : 0,
+  };
+  const score = breakdown.waves + breakdown.kills + breakdown.sparkles + breakdown.orbBonus + breakdown.victory;
+
+  // --- Save to highscores ---
+  const entry = { name: state.playerName, score, wave: state.wave, kills: state.kills, date: Date.now() };
+  const rank = saveHighscore(entry);
+
   document.getElementById('end-title').textContent = victory ? '🌟 Morning!' : '💔 Defeat';
   document.getElementById('end-text').textContent = victory
-    ? `Flashy survived ${state.wave} waves. The Orb is safe!`
-    : `The Sassinator's stuffies took the Orb on wave ${state.wave}.`;
+    ? `${state.playerName} survived all ${state.wave} waves. The Orb is safe!`
+    : `${state.playerName}'s defense fell on wave ${state.wave}.`;
+
+  // Score summary box
+  const rankLabel = rank > 0 && rank <= 10
+    ? `🏆 New high score — rank #${rank}!`
+    : (rank > 0 ? `Ranked #${rank}` : '');
+  document.getElementById('score-summary').innerHTML = `
+    <div class="ss-label">Final Score</div>
+    <div class="ss-score">${score.toLocaleString()}</div>
+    <div class="ss-breakdown">
+      Waves cleared: ${wavesCleared} (+${breakdown.waves.toLocaleString()}) ·
+      Kills: ${state.kills} (+${breakdown.kills.toLocaleString()})<br/>
+      Sparkles earned: ${state.totalSparklesEarned.toLocaleString()} ·
+      Orb bonus: ${state.orbLives} × 1000 = ${breakdown.orbBonus.toLocaleString()}
+      ${victory ? `<br/>🏆 Victory bonus: +5,000` : ''}
+    </div>
+    ${rankLabel ? `<div class="ss-rank">${rankLabel}</div>` : ''}
+  `;
+  renderHighscores('hs-list-end', entry);
+
   document.getElementById('end-screen').classList.remove('hidden');
+}
+
+// ---------- Highscores (persisted to localStorage) ----------
+const HS_KEY = 'fd_highscores';
+const HS_MAX = 10;
+
+function loadHighscores() {
+  try { return JSON.parse(localStorage.getItem(HS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveHighscore(entry) {
+  const list = loadHighscores();
+  list.push(entry);
+  list.sort((a, b) => b.score - a.score);
+  const trimmed = list.slice(0, HS_MAX);
+  localStorage.setItem(HS_KEY, JSON.stringify(trimmed));
+  // Return 1-based rank, or 0 if not in top HS_MAX
+  const idx = trimmed.indexOf(entry);
+  return idx === -1 ? 0 : idx + 1;
+}
+
+function renderHighscores(elId, highlightEntry = null) {
+  const list = loadHighscores();
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (list.length === 0) {
+    el.innerHTML = '<li class="hs-empty">No scores yet — be the first!</li>';
+    return;
+  }
+  el.innerHTML = list.map((e, i) => {
+    const isNew = highlightEntry && e === highlightEntry;
+    return `<li class="${isNew ? 'hs-new' : ''}">
+      <span class="hs-rank">${i + 1}.</span>
+      <span class="hs-name">${escapeHtml(e.name)}</span>
+      <span class="hs-score">${e.score.toLocaleString()}</span>
+      <span class="hs-wave">W${e.wave}</span>
+    </li>`;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
 
 // ---------- HUD ----------
@@ -2202,6 +2289,8 @@ function updateProjectiles(dt) {
           const reward = e.userData.type === 'sassinator' ? 40
             : (e.userData.type === 'skyler' || e.userData.type === 'honey') ? 12 : 5;
           state.sparkles += reward;
+          state.totalSparklesEarned += reward;
+          state.kills += 1;
           audio.kill();
           updateHUD();
         }
@@ -2408,18 +2497,40 @@ function updateOrb(dt) {
 }
 
 // ---------- Start ----------
-document.getElementById('start-btn').addEventListener('click', () => {
+// Pre-fill name input with the last name used
+const NAME_KEY = 'fd_player_name';
+const nameInput = document.getElementById('player-name');
+if (nameInput) nameInput.value = localStorage.getItem(NAME_KEY) || '';
+
+// Render any existing highscores on the start screen
+renderHighscores('hs-list-start');
+
+function tryStart() {
+  const name = (nameInput?.value || '').trim();
+  if (!name) {
+    nameInput.classList.add('error');
+    nameInput.focus();
+    setTimeout(() => nameInput.classList.remove('error'), 600);
+    return;
+  }
+  state.playerName = name.slice(0, 14);
+  localStorage.setItem(NAME_KEY, state.playerName);
+
   document.getElementById('start-screen').classList.add('hidden');
   state.running = true;
   state.inIntermission = true;
   state.intermissionTime = 8;
   audio.ensure();
   audio.startMusic();
-  // Default to first-person — see through Flashy's eyes
   setCamMode('firstperson');
-  showMessage('Place turrets while you can! ⏳', 3);
+  showMessage(`Good luck, ${state.playerName}! ⏳`, 3);
   updateHUD();
-});
+}
+
+document.getElementById('start-btn').addEventListener('click', tryStart);
+if (nameInput) {
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryStart(); });
+}
 
 // ---------- Main loop ----------
 const clock = new THREE.Clock();

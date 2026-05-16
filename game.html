@@ -53,6 +53,12 @@
         to steal Chelsea's <b>Orb of Power</b> — actually a moon nightlight, but shhh.</p>
         <p>Only <b>Flashy, the Mighty Sloth</b>, can save the night.</p>
       </div>
+
+      <div class="name-input-wrap">
+        <label for="player-name">🦥 Your name:</label>
+        <input id="player-name" type="text" maxlength="14" placeholder="Hero name" autocomplete="off"/>
+      </div>
+
       <div class="controls">
         <h3>Controls</h3>
         <ul>
@@ -66,12 +72,23 @@
         </ul>
         <p class="tip">💨 Every now and then Chelsea farts in her sleep and a power-up appears near the bed. Grab it!</p>
       </div>
+
       <button id="start-btn">Start Wave 1</button>
+
+      <div class="highscores" id="highscores-start">
+        <h3>🏆 Top Scores</h3>
+        <ol id="hs-list-start"><li class="hs-empty">No scores yet — be the first!</li></ol>
+      </div>
     </div>
 
     <div id="end-screen" class="hidden">
       <h1 id="end-title">Game Over</h1>
       <p id="end-text"></p>
+      <div class="score-summary" id="score-summary"></div>
+      <div class="highscores" id="highscores-end">
+        <h3>🏆 Top Scores</h3>
+        <ol id="hs-list-end"></ol>
+      </div>
       <button onclick="location.reload()">Try Again</button>
     </div>
   </div>
