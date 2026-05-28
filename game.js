@@ -2437,8 +2437,12 @@ function updateEnemies(dt) {
       e.userData.hpBar.scale.x = ratio;
     }
 
-    // Reached orb?
-    if (dist < 2.4) {
+    // Reached orb? Always measure against the *orb*, not the current target
+    // (which may be a turret or Flashy for aggressive enemies).
+    const odx = ORB_POSITION.x - e.position.x;
+    const odz = ORB_POSITION.z - e.position.z;
+    const orbDist = Math.hypot(odx, odz);
+    if (orbDist < 2.4) {
       state.orbLives -= 1;
       e.userData.dead = true;
       e.userData.stoleOrb = true;
