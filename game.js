@@ -1866,16 +1866,36 @@ function placeTurretAtAim() {
 
 function shootFromFlashy() {
   if (flashy.userData.fireCooldown > 0) return;
+
+  // Fire from Flashy's hand height — roughly mid-body so darts hit enemy bodies
   const origin = flashy.position.clone();
-  origin.y = 1.7;
-  const dir = new THREE.Vector3().subVectors(aimPoint, origin);
-  dir.y = 0;
+  origin.y = 0.9;
+
+  // Aim toward the aim point in 3D. If a specific enemy is roughly under the
+  // cursor, aim at its body; otherwise aim at the floor-level aim point.
+  const target = new THREE.Vector3(aimPoint.x, 0.5, aimPoint.z);
+  let nearestEnemy = null, nearestDist = 3.0;
+  for (const e of state.enemies) {
+    const dx = e.position.x - aimPoint.x;
+    const dz = e.position.z - aimPoint.z;
+    const d = Math.hypot(dx, dz);
+    if (d < nearestDist) { nearestEnemy = e; nearestDist = d; }
+  }
+  if (nearestEnemy) {
+    target.set(
+      nearestEnemy.position.x,
+      nearestEnemy.position.y + nearestEnemy.userData.size * 0.6,
+      nearestEnemy.position.z
+    );
+  }
+
+  const dir = new THREE.Vector3().subVectors(target, origin);
   if (dir.lengthSq() < 0.001) return;
   dir.normalize();
 
   flashy.userData.fireCooldown = state.weapons.dart.cooldown;
   flashy.userData.lastShotAt = performance.now();
-  // Face shot direction
+  // Face shot direction (yaw only)
   flashy.rotation.y = Math.atan2(dir.x, dir.z);
 
   const dmg = state.weapons.dart.damage;
@@ -1884,7 +1904,7 @@ function shootFromFlashy() {
       const angle = i * 0.18;
       const d = dir.clone();
       const c = Math.cos(angle), s = Math.sin(angle);
-      d.set(d.x * c - d.z * s, 0, d.x * s + d.z * c);
+      d.set(d.x * c - d.z * s, d.y, d.x * s + d.z * c);
       spawnProjectile(origin, d, { damage: dmg });
     }
   } else {
