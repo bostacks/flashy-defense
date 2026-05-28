@@ -1794,12 +1794,12 @@ window.addEventListener('keydown', e => {
 });
 
 // ---------- Camera modes ----------
-// Third-person only — single fixed camera mode. Pointer-locked for mouse-look.
-function engageThirdPerson() {
-  state.camYaw = flashy.rotation.y;
-  document.getElementById('crosshair')?.classList.remove('hidden');
-  reticle.visible = false;
-  if (canvas.requestPointerLock) canvas.requestPointerLock();
+// Top-down only — fixed overhead follow camera, mouse-aimed via floor raycast.
+function engageTopDown() {
+  // Free the cursor and hide first-person crosshair; show the ground reticle ring
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  document.getElementById('crosshair')?.classList.add('hidden');
+  reticle.visible = true;
 }
 window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
@@ -1843,14 +1843,9 @@ const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const aimPoint = new THREE.Vector3();
 
 window.addEventListener('mousemove', e => {
-  if (document.pointerLockElement === canvas) {
-    state.camYaw   += e.movementX * 0.0025;
-    state.camPitch -= e.movementY * 0.0025;
-    state.camPitch = THREE.MathUtils.clamp(state.camPitch, -1.2, 0.5);
-  } else {
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  }
+  // Top-down view uses the cursor position for aiming via floor raycast
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
 
 window.addEventListener('mousedown', e => {
@@ -2112,15 +2107,13 @@ function showMessage(text, time = 2) {
 
 // ---------- Update loop ----------
 function updatePlayer(dt) {
-  // WASD moves relative to camera yaw (third-person only)
-  const forward = new THREE.Vector3(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
-  const right   = new THREE.Vector3(Math.cos(state.camYaw), 0, -Math.sin(state.camYaw));
-
+  // Top-down WASD: world-space movement (camera doesn't rotate with player)
+  // W = away from screen (-Z), S = toward (+Z), A/D = left/right (-X/+X)
   const move = new THREE.Vector3();
-  if (keys['w']) move.add(forward);
-  if (keys['s']) move.sub(forward);
-  if (keys['a']) move.sub(right);
-  if (keys['d']) move.add(right);
+  if (keys['w']) move.z -= 1;
+  if (keys['s']) move.z += 1;
+  if (keys['a']) move.x -= 1;
+  if (keys['d']) move.x += 1;
 
   const moving = move.lengthSq() > 0;
   if (moving) {
@@ -2130,8 +2123,16 @@ function updatePlayer(dt) {
     flashy.position.z = THREE.MathUtils.clamp(flashy.position.z, -ROOM.d / 2 + 1, ROOM.d / 2 - 1);
     resolveObstacleCollision(flashy.position);
   }
-  // Always face the camera yaw
-  flashy.rotation.y = state.camYaw;
+  // Face the cursor (aim point) most of the time; turn toward movement direction
+  // briefly after a shot so the body matches the dart's facing.
+  if (performance.now() - flashy.userData.lastShotAt > 500 && !moving) {
+    // Idle: face the cursor
+    const ax = aimPoint.x - flashy.position.x;
+    const az = aimPoint.z - flashy.position.z;
+    if (ax * ax + az * az > 0.04) flashy.rotation.y = Math.atan2(ax, az);
+  } else if (moving) {
+    flashy.rotation.y = Math.atan2(move.x, move.z);
+  }
 
   // Walk animation (stuffed-animal waddle)
   const u = flashy.userData;
@@ -2173,25 +2174,17 @@ function updatePlayer(dt) {
   // Fire cooldown
   if (flashy.userData.fireCooldown > 0) flashy.userData.fireCooldown -= dt;
 
-  // Third-person camera: trailing over-shoulder follow
-  const y = state.camYaw, p = state.camPitch;
-  const back = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y)).multiplyScalar(6);
-  const desired = flashy.position.clone().add(back);
-  desired.y += 3.2 + Math.sin(p) * 2;
-  camera.position.lerp(desired, 0.2);
-  const look = flashy.position.clone();
-  look.y += 1.8;
-  look.x += Math.sin(y) * 2;
-  look.z += Math.cos(y) * 2;
-  camera.lookAt(look);
+  // Top-down camera: smooth follow above and slightly behind Flashy
+  const desired = flashy.position.clone().add(CAMERA_OFFSET);
+  camera.position.lerp(desired, 0.12);
+  const tgt = flashy.position.clone(); tgt.y = 1;
+  camera.lookAt(tgt);
 
-  // Aim point on ground — always screen-center crosshair raycast
-  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  // Aim point: raycast from mouse cursor onto the floor plane
+  raycaster.setFromCamera(mouse, camera);
   const hit = raycaster.ray.intersectPlane(groundPlane, aimPoint);
   if (!hit) {
-    const fwd = new THREE.Vector3();
-    camera.getWorldDirection(fwd);
-    aimPoint.copy(camera.position).add(fwd.multiplyScalar(15));
+    aimPoint.copy(flashy.position);
     aimPoint.y = 0;
   }
   reticle.position.set(aimPoint.x, 0.05, aimPoint.z);
@@ -2619,7 +2612,7 @@ function tryStart() {
   state.intermissionTime = 8;
   audio.ensure();
   audio.startMusic();
-  engageThirdPerson();
+  engageTopDown();
   showMessage(`Good luck, ${state.playerName}! ⏳`, 3);
   updateHUD();
 }
