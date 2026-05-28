@@ -1769,7 +1769,19 @@ function spawnDeathPoof(pos, color) {
 // ---------- Input ----------
 const keys = {};
 const GAME_KEYS = new Set(['w','a','s','d','t','m','1','2','3','4',' ','escape']);
+
+// True when the focused element is an input/textarea — i.e. the player is
+// typing into the name field on the start screen. We must NOT preventDefault
+// or run game shortcuts in that case.
+function isTypingInField() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
 window.addEventListener('keydown', e => {
+  if (isTypingInField()) return; // let the field handle every key
   const k = e.key.toLowerCase();
   if (GAME_KEYS.has(k)) e.preventDefault();
   keys[k] = true;
@@ -1800,6 +1812,7 @@ function engageTopDown() {
   reticle.visible = true;
 }
 window.addEventListener('keyup', e => {
+  if (isTypingInField()) return;
   const k = e.key.toLowerCase();
   if (GAME_KEYS.has(k)) e.preventDefault();
   keys[k] = false;
