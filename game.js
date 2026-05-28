@@ -1240,15 +1240,12 @@ function createEnemy(type, wave = 1) {
   if (isAirborne) g.position.y = 10 + Math.random() * 4;
 
   // ---- Combat profile (set per type) ----
-  // dps: damage dealt per second while in melee range of a target
-  // attackRange: world units within which they switch from rushing to attacking
-  // canAttack: gated by wave so early waves stay simple
   const attackProfiles = {
-    skyler:     { dps: 12, attackRange: 2.2, minWave: 3 },
-    honey:      { dps: 22, attackRange: 2.6, minWave: 3 },
-    sassinator: { dps: 38, attackRange: 3.2, minWave: 1 },
-    para:       { dps:  8, attackRange: 2.0, minWave: 4 },
-    minion:     { dps:  4, attackRange: 1.8, minWave: 5 },
+    skyler:     { dps:  8, attackRange: 2.2, minWave: 3 },
+    honey:      { dps: 16, attackRange: 2.6, minWave: 3 },
+    sassinator: { dps: 28, attackRange: 3.2, minWave: 1 },
+    para:       { dps:  6, attackRange: 2.0, minWave: 4 },
+    minion:     { dps:  3, attackRange: 1.8, minWave: 5 },
   };
   const ap = attackProfiles[type] || attackProfiles.minion;
   const canAttack = wave >= ap.minWave;
@@ -1259,9 +1256,10 @@ function createEnemy(type, wave = 1) {
     bob: Math.random() * Math.PI * 2,
     isEnemy: true,
     airborne: isAirborne, paraGroup, vy: 0,
-    // Combat
+    // Combat — start cooldown at 0.8s so first swipe has a windup,
+    // giving the player time to dodge or kill the enemy first
     canAttack, dps: ap.dps, attackRange: ap.attackRange,
-    attackCooldown: 0,
+    attackCooldown: 0.8,
     currentTarget: null,
   };
   scene.add(g);
@@ -1986,8 +1984,10 @@ function endWave() {
   updateHUD();
 }
 
-function gameOver(victory = false) {
+function gameOver(victory = false, reason = null) {
+  if (!state.running) return; // guard against double-fire
   state.running = false;
+  state.endReason = victory ? 'victory' : (reason || 'orb');
   audio.stopMusic();
   audio.over();
 
@@ -2006,10 +2006,18 @@ function gameOver(victory = false) {
   const entry = { name: state.playerName, score, wave: state.wave, kills: state.kills, date: Date.now() };
   const rank = saveHighscore(entry);
 
-  document.getElementById('end-title').textContent = victory ? '🌟 Morning!' : '💔 Defeat';
-  document.getElementById('end-text').textContent = victory
-    ? `${state.playerName} survived all ${state.wave} waves. The Orb is safe!`
-    : `${state.playerName}'s defense fell on wave ${state.wave}.`;
+  const titles = {
+    victory: '🌟 Morning!',
+    orb:     '💔 The Orb Was Stolen!',
+    flashy:  '💔 Flashy Was Knocked Out!',
+  };
+  const messages = {
+    victory: `${state.playerName} survived all ${state.wave} waves. The Orb is safe!`,
+    orb:     `The stuffies took the Orb on wave ${state.wave}. Flashy needs more turrets!`,
+    flashy:  `${state.playerName} was overwhelmed on wave ${state.wave}. Place defensive turrets and dodge attacks!`,
+  };
+  document.getElementById('end-title').textContent = titles[state.endReason];
+  document.getElementById('end-text').textContent  = messages[state.endReason];
 
   // Score summary box
   const rankLabel = rank > 0 && rank <= 10
@@ -2380,11 +2388,19 @@ function updateEnemies(dt) {
         if (attackTarget === flashy) updateHUD();
         if (attackTarget.userData.hp <= 0) {
           if (attackTarget === flashy) {
-            gameOver(false);
+            gameOver(false, 'flashy');
             return;
           } else if (attackTarget.userData.isTurret) {
             attackTarget.userData.dead = true;
             spawnDeathPoof(attackTarget.position, attackTarget.userData.conf.color);
+            showMessage('🛠️ Turret destroyed!', 1.2);
+          }
+        }
+        // Low-HP warning so the player notices they're being hit
+        if (attackTarget === flashy) {
+          if (flashy.userData.hp < 40 && (!showMessage._lastHpWarn || performance.now() - showMessage._lastHpWarn > 3000)) {
+            showMessage(`⚠️ Flashy is hurt! HP: ${Math.round(flashy.userData.hp)}`, 1.3);
+            showMessage._lastHpWarn = performance.now();
           }
         }
       }
@@ -2418,7 +2434,7 @@ function updateEnemies(dt) {
       setTimeout(() => orbLight.color.setHex(0xffd07a), 350);
       audio.orbHit();
       showMessage(`😱 Orb stolen! ${Math.max(0, state.orbLives)} lives left`, 2);
-      if (state.orbLives <= 0) gameOver(false);
+      if (state.orbLives <= 0) gameOver(false, 'orb');
       updateHUD();
     }
   }
