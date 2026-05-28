@@ -695,7 +695,6 @@ const state = {
   placingTurret: false,
   tempBuffs: [],
   tripleShot: false,
-  camMode: 'topdown',
   camYaw: Math.PI,
   camPitch: -0.15,
   // High-score tracking
@@ -1709,7 +1708,7 @@ function spawnDeathPoof(pos, color) {
 
 // ---------- Input ----------
 const keys = {};
-const GAME_KEYS = new Set(['w','a','s','d','t','v','m','1','2','3','4',' ','escape']);
+const GAME_KEYS = new Set(['w','a','s','d','t','m','1','2','3','4',' ','escape']);
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (GAME_KEYS.has(k)) e.preventDefault();
@@ -1719,7 +1718,6 @@ window.addEventListener('keydown', e => {
   if (k === '2') selectTurretType('bubble');
   if (k === '3') selectTurretType('marshmallow');
   if (k === '4') selectTurretType('missile');
-  if (k === 'v') cycleCamMode();
   if (k === ' ' && state.running) {
     if (flashy.position.y < 0.05) { flashy.userData.vy = 8; audio.jump(); }
   }
@@ -1734,39 +1732,13 @@ window.addEventListener('keydown', e => {
 });
 
 // ---------- Camera modes ----------
-const CAM_MODE_LABELS = {
-  topdown: 'top-down',
-  thirdperson: 'over-shoulder',
-  firstperson: 'first-person',
-};
-function cycleCamMode() {
-  const order = ['topdown', 'thirdperson', 'firstperson'];
-  const idx = order.indexOf(state.camMode);
-  setCamMode(order[(idx + 1) % order.length]);
+// Third-person only — single fixed camera mode. Pointer-locked for mouse-look.
+function engageThirdPerson() {
+  state.camYaw = flashy.rotation.y;
+  document.getElementById('crosshair')?.classList.remove('hidden');
+  reticle.visible = false;
+  if (canvas.requestPointerLock) canvas.requestPointerLock();
 }
-function setCamMode(mode) {
-  state.camMode = mode;
-  const crosshair = document.getElementById('crosshair');
-  const indicator = document.getElementById('view-name');
-  if (indicator) indicator.textContent = CAM_MODE_LABELS[mode];
-  if (mode === 'topdown') {
-    if (document.pointerLockElement === canvas) document.exitPointerLock();
-    crosshair?.classList.add('hidden');
-    reticle.visible = true;
-  } else {
-    // Sync yaw to Flashy's current facing so transition isn't jarring
-    state.camYaw = flashy.rotation.y;
-    if (canvas.requestPointerLock) canvas.requestPointerLock();
-    crosshair?.classList.remove('hidden');
-    reticle.visible = false;
-  }
-  showMessage(`View: ${CAM_MODE_LABELS[mode]}`, 1.6);
-}
-document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement !== canvas && state.camMode !== 'topdown') {
-    setCamMode('topdown');
-  }
-});
 window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
   if (GAME_KEYS.has(k)) e.preventDefault();
@@ -2060,19 +2032,9 @@ function showMessage(text, time = 2) {
 
 // ---------- Update loop ----------
 function updatePlayer(dt) {
-  // Mode-aware forward/right vectors
-  let forward, right;
-  if (state.camMode === 'topdown') {
-    forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.y = 0;
-    if (forward.lengthSq() < 1e-4) forward.set(0, 0, -1);
-    forward.normalize();
-    right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
-  } else {
-    forward = new THREE.Vector3(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
-    right   = new THREE.Vector3(Math.cos(state.camYaw), 0, -Math.sin(state.camYaw));
-  }
+  // WASD moves relative to camera yaw (third-person only)
+  const forward = new THREE.Vector3(Math.sin(state.camYaw), 0, Math.cos(state.camYaw));
+  const right   = new THREE.Vector3(Math.cos(state.camYaw), 0, -Math.sin(state.camYaw));
 
   const move = new THREE.Vector3();
   if (keys['w']) move.add(forward);
@@ -2087,15 +2049,9 @@ function updatePlayer(dt) {
     flashy.position.x = THREE.MathUtils.clamp(flashy.position.x, -ROOM.w / 2 + 1, ROOM.w / 2 - 1);
     flashy.position.z = THREE.MathUtils.clamp(flashy.position.z, -ROOM.d / 2 + 1, ROOM.d / 2 - 1);
     resolveObstacleCollision(flashy.position);
-    // Top-down: face movement direction (when not shooting). Other modes: yaw is driven by camera.
-    if (state.camMode === 'topdown' && performance.now() - flashy.userData.lastShotAt > 500) {
-      flashy.rotation.y = Math.atan2(move.x, move.z);
-    }
   }
-  // In FP/3P, keep Flashy facing the camera yaw at all times
-  if (state.camMode !== 'topdown') {
-    flashy.rotation.y = state.camYaw;
-  }
+  // Always face the camera yaw
+  flashy.rotation.y = state.camYaw;
 
   // Walk animation (stuffed-animal waddle)
   const u = flashy.userData;
@@ -2137,42 +2093,20 @@ function updatePlayer(dt) {
   // Fire cooldown
   if (flashy.userData.fireCooldown > 0) flashy.userData.fireCooldown -= dt;
 
-  // Camera follow — mode-aware
-  if (state.camMode === 'topdown') {
-    const desired = flashy.position.clone().add(CAMERA_OFFSET);
-    camera.position.lerp(desired, 0.12);
-    const tgt = flashy.position.clone(); tgt.y = 1;
-    camera.lookAt(tgt);
-  } else if (state.camMode === 'firstperson') {
-    const y = state.camYaw, p = state.camPitch;
-    const eye = flashy.position.clone();
-    eye.y += 2.6;
-    eye.x += Math.sin(y) * 0.4;
-    eye.z += Math.cos(y) * 0.4;
-    camera.position.copy(eye);
-    const lookDir = new THREE.Vector3(
-      Math.sin(y) * Math.cos(p),
-      Math.sin(p),
-      Math.cos(y) * Math.cos(p)
-    );
-    const target = eye.clone().add(lookDir.multiplyScalar(10));
-    camera.lookAt(target);
-  } else { // thirdperson
-    const y = state.camYaw, p = state.camPitch;
-    const back = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y)).multiplyScalar(6);
-    const desired = flashy.position.clone().add(back);
-    desired.y += 3.2 + Math.sin(p) * 2;
-    camera.position.lerp(desired, 0.2);
-    const look = flashy.position.clone();
-    look.y += 1.8;
-    look.x += Math.sin(y) * 2;
-    look.z += Math.cos(y) * 2;
-    camera.lookAt(look);
-  }
+  // Third-person camera: trailing over-shoulder follow
+  const y = state.camYaw, p = state.camPitch;
+  const back = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y)).multiplyScalar(6);
+  const desired = flashy.position.clone().add(back);
+  desired.y += 3.2 + Math.sin(p) * 2;
+  camera.position.lerp(desired, 0.2);
+  const look = flashy.position.clone();
+  look.y += 1.8;
+  look.x += Math.sin(y) * 2;
+  look.z += Math.cos(y) * 2;
+  camera.lookAt(look);
 
-  // Aim point on ground (screen-center in FP/3P, mouse in top-down)
-  const aimNDC = state.camMode === 'topdown' ? mouse : new THREE.Vector2(0, 0);
-  raycaster.setFromCamera(aimNDC, camera);
+  // Aim point on ground — always screen-center crosshair raycast
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
   const hit = raycaster.ray.intersectPlane(groundPlane, aimPoint);
   if (!hit) {
     const fwd = new THREE.Vector3();
@@ -2542,7 +2476,7 @@ function tryStart() {
   state.intermissionTime = 8;
   audio.ensure();
   audio.startMusic();
-  setCamMode('firstperson');
+  engageThirdPerson();
   showMessage(`Good luck, ${state.playerName}! ⏳`, 3);
   updateHUD();
 }
