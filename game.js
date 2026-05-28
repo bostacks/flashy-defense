@@ -673,13 +673,15 @@ const state = {
   inIntermission: true,
   intermissionTime: 3.5,
   sparkles: 40,
+  ammo: 100,
+  maxAmmo: 100,
   orbLives: 3,
   enemiesToSpawn: 0,
   spawnTimer: 0,
   spawnInterval: 1.5,
   currentTypes: ['minion'],
   currentReward: 30,
-  fartTimer: 14,
+  fartTimer: 8,
   enemies: [],
   projectiles: [],
   turrets: [],
@@ -1237,12 +1239,30 @@ function createEnemy(type, wave = 1) {
   g.position.copy(spawn);
   if (isAirborne) g.position.y = 10 + Math.random() * 4;
 
+  // ---- Combat profile (set per type) ----
+  // dps: damage dealt per second while in melee range of a target
+  // attackRange: world units within which they switch from rushing to attacking
+  // canAttack: gated by wave so early waves stay simple
+  const attackProfiles = {
+    skyler:     { dps: 12, attackRange: 2.2, minWave: 3 },
+    honey:      { dps: 22, attackRange: 2.6, minWave: 3 },
+    sassinator: { dps: 38, attackRange: 3.2, minWave: 1 },
+    para:       { dps:  8, attackRange: 2.0, minWave: 4 },
+    minion:     { dps:  4, attackRange: 1.8, minWave: 5 },
+  };
+  const ap = attackProfiles[type] || attackProfiles.minion;
+  const canAttack = wave >= ap.minWave;
+
   g.userData = {
     type, species, hp, maxHp: hp, speed, size, color,
     hpBar: barFg, barGroup, barWidth: size * 1.6,
     bob: Math.random() * Math.PI * 2,
     isEnemy: true,
     airborne: isAirborne, paraGroup, vy: 0,
+    // Combat
+    canAttack, dps: ap.dps, attackRange: ap.attackRange,
+    attackCooldown: 0,
+    currentTarget: null,
   };
   scene.add(g);
   state.enemies.push(g);
@@ -1308,10 +1328,10 @@ function spawnProjectile(origin, direction, opts = {}) {
 
 // ---------- Turrets ----------
 const TURRET_TYPES = {
-  dart:        { cost: 25, range: 10, damage: 15, cooldown: 0.38, color: 0xff9248 },
-  bubble:      { cost: 50, range: 11, damage: 28, cooldown: 0.55, color: 0x66ddee },
-  marshmallow: { cost: 75, range: 13, damage: 55, cooldown: 0.85, color: 0xfff0d0 },
-  missile:     { cost: 100, range: 16, damage: 40, cooldown: 1.1, color: 0xff5577 },
+  dart:        { cost: 25, range: 10, damage: 15, cooldown: 0.38, color: 0xff9248, hp:  60 },
+  bubble:      { cost: 50, range: 11, damage: 28, cooldown: 0.55, color: 0x66ddee, hp:  90 },
+  marshmallow: { cost: 75, range: 13, damage: 55, cooldown: 0.85, color: 0xfff0d0, hp: 130 },
+  missile:     { cost: 100,range: 16, damage: 40, cooldown: 1.1,  color: 0xff5577, hp: 110 },
 };
 
 // Plush stuffed-animal turrets — each type looks like a different cute stuffie
@@ -1547,9 +1567,30 @@ function createTurret(type, pos) {
   const head = new THREE.Group();
   g.add(head);
 
+  // HP bar above the turret (billboarded)
+  const tBarGroup = new THREE.Group();
+  tBarGroup.position.y = 2.7;
+  const tBarBg = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.4, 0.14),
+    new THREE.MeshBasicMaterial({ color: 0x111111 })
+  );
+  tBarGroup.add(tBarBg);
+  const tBarFg = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.4, 0.14),
+    new THREE.MeshBasicMaterial({ color: 0x6ddc9a })
+  );
+  tBarFg.position.z = 0.002;
+  tBarGroup.add(tBarFg);
+  g.add(tBarGroup);
+
   g.position.copy(pos);
   g.position.y = 0;
-  g.userData = { type, cooldown: 0, conf, head };
+  g.userData = {
+    type, cooldown: 0, conf, head,
+    hp: conf.hp, maxHp: conf.hp,
+    hpBar: tBarFg, barGroup: tBarGroup,
+    isTurret: true,
+  };
   scene.add(g);
   state.turrets.push(g);
   return g;
@@ -1562,7 +1603,26 @@ const PICKUP_INFO = {
   triple:    { color: 0x77ddff, label: '🎯 Triple Shot (10s)' },
   heal:      { color: 0x88ff99, label: '❤️ +50 HP' },
   sparkles:  { color: 0xffffff, label: '✨ +30 Sparkles' },
+  ammo:      { color: 0xff9248, label: '🔫 +40 Ammo' },
 };
+// Weighted distribution: ammo + heal dominate so survival is sustainable
+const PICKUP_WEIGHTS = [
+  ['ammo', 5],
+  ['heal', 4],
+  ['sparkles', 2],
+  ['rapidfire', 1],
+  ['bigdamage', 1],
+  ['triple', 1],
+];
+function pickPickupType() {
+  const total = PICKUP_WEIGHTS.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [t, w] of PICKUP_WEIGHTS) {
+    r -= w;
+    if (r <= 0) return t;
+  }
+  return 'ammo';
+}
 
 function spawnFartCloud() {
   // Quick cosmetic puff above the bed
@@ -1590,9 +1650,8 @@ function spawnFartCloud() {
     state.particles.push(small);
   }
 
-  // Pick a power-up and float it down inside an actual fart bubble
-  const types = Object.keys(PICKUP_INFO);
-  const type = types[Math.floor(Math.random() * types.length)];
+  // Pick a power-up (weighted toward ammo and heal so they're sustainable)
+  const type = pickPickupType();
   setTimeout(() => {
     if (!state.running) return;
     const g = new THREE.Group();
@@ -1662,6 +1721,9 @@ function applyPickup(type) {
     case 'sparkles':
       state.sparkles += 30;
       state.totalSparklesEarned += 30;
+      break;
+    case 'ammo':
+      state.ammo = Math.min(state.maxAmmo, state.ammo + 40);
       break;
   }
   showMessage(PICKUP_INFO[type].label, 1.6);
@@ -1838,6 +1900,16 @@ function placeTurretAtAim() {
 
 function shootFromFlashy() {
   if (flashy.userData.fireCooldown > 0) return;
+  if (state.ammo <= 0) {
+    // Out of ammo — brief click + nudge
+    if (!shootFromFlashy._lastEmptyAt || performance.now() - shootFromFlashy._lastEmptyAt > 500) {
+      audio.place();
+      showMessage('Out of ammo! 💨 Wait for Chelsea to fart', 1.4);
+      shootFromFlashy._lastEmptyAt = performance.now();
+    }
+    flashy.userData.fireCooldown = 0.18;
+    return;
+  }
 
   // Fire from Flashy's hand height — roughly mid-body so darts hit enemy bodies
   const origin = flashy.position.clone();
@@ -1871,7 +1943,7 @@ function shootFromFlashy() {
   flashy.rotation.y = Math.atan2(dir.x, dir.z);
 
   const dmg = state.weapons.dart.damage;
-  if (state.tripleShot) {
+  if (state.tripleShot && state.ammo >= 3) {
     for (let i = -1; i <= 1; i++) {
       const angle = i * 0.18;
       const d = dir.clone();
@@ -1879,10 +1951,13 @@ function shootFromFlashy() {
       d.set(d.x * c - d.z * s, d.y, d.x * s + d.z * c);
       spawnProjectile(origin, d, { damage: dmg });
     }
+    state.ammo -= 3;
   } else {
     spawnProjectile(origin, dir, { damage: dmg });
+    state.ammo -= 1;
   }
   audio.shoot();
+  updateHUD();
 }
 
 // ---------- Wave management ----------
@@ -2011,6 +2086,11 @@ function updateHUD() {
   document.getElementById('wave-num').textContent = state.wave || 1;
   document.getElementById('orb-status').textContent = `${state.orbLives}/3`;
   document.getElementById('hp').textContent = Math.max(0, Math.round(flashy.userData.hp));
+  const ammoEl = document.getElementById('ammo-count');
+  if (ammoEl) {
+    ammoEl.textContent = Math.max(0, state.ammo);
+    ammoEl.style.color = state.ammo <= 0 ? '#ff5d7a' : state.ammo < 20 ? '#ffc94a' : '';
+  }
   document.getElementById('sparkle-count').textContent = state.sparkles;
   document.getElementById('enemy-count').textContent = state.enemies.length + state.enemiesToSpawn;
   const inter = document.getElementById('intermission');
@@ -2151,11 +2231,37 @@ function updateEnemies(dt) {
       continue;  // skip ground movement while airborne
     }
 
-    const dx = ORB_POSITION.x - e.position.x;
-    const dz = ORB_POSITION.z - e.position.z;
+    // ---- Pick a target ----
+    // Aggressive enemies prefer nearby turrets/Flashy; everyone defaults to
+    // walking toward the orb. The chosen target overrides the movement goal.
+    let targetX = ORB_POSITION.x, targetZ = ORB_POSITION.z;
+    let inAttackRange = false;
+    let attackTarget = null;
+    if (e.userData.canAttack) {
+      let nearest = null, nd = Infinity;
+      // Check turrets
+      for (const t of state.turrets) {
+        const d = Math.hypot(t.position.x - e.position.x, t.position.z - e.position.z);
+        if (d < 8 && d < nd) { nd = d; nearest = t; }
+      }
+      // Check Flashy
+      const fd = Math.hypot(flashy.position.x - e.position.x, flashy.position.z - e.position.z);
+      if (fd < 7 && fd < nd) { nd = fd; nearest = flashy; }
+      if (nearest) {
+        targetX = nearest.position.x;
+        targetZ = nearest.position.z;
+        if (nd < e.userData.attackRange) {
+          inAttackRange = true;
+          attackTarget = nearest;
+        }
+      }
+    }
+
+    const dx = targetX - e.position.x;
+    const dz = targetZ - e.position.z;
     const dist = Math.hypot(dx, dz);
 
-    // Simple separation from other enemies so they don't fully overlap
+    // Separation from other enemies
     let sx = 0, sz = 0;
     for (const o of state.enemies) {
       if (o === e) continue;
@@ -2168,7 +2274,28 @@ function updateEnemies(dt) {
       }
     }
 
-    if (dist > 0.001) {
+    if (inAttackRange) {
+      // Stop and attack
+      e.rotation.y = Math.atan2(dx, dz);
+      e.userData.attackCooldown -= dt;
+      if (e.userData.attackCooldown <= 0) {
+        const dmg = e.userData.dps * 0.6; // 0.6s per swipe
+        attackTarget.userData.hp -= dmg;
+        e.userData.attackCooldown = 0.6;
+        spawnHitBurst(attackTarget.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff5577);
+        audio.hit();
+        if (attackTarget === flashy) updateHUD();
+        if (attackTarget.userData.hp <= 0) {
+          if (attackTarget === flashy) {
+            gameOver(false);
+            return;
+          } else if (attackTarget.userData.isTurret) {
+            attackTarget.userData.dead = true;
+            spawnDeathPoof(attackTarget.position, attackTarget.userData.conf.color);
+          }
+        }
+      }
+    } else if (dist > 0.001) {
       const nx = dx / dist + sx * 0.3;
       const nz = dz / dist + sz * 0.3;
       const len = Math.hypot(nx, nz) || 1;
@@ -2260,7 +2387,18 @@ function updateProjectiles(dt) {
 
 function updateTurrets(dt) {
   for (const t of state.turrets) {
+    if (t.userData.dead) continue;
     t.userData.cooldown -= dt;
+
+    // HP bar billboard
+    if (t.userData.barGroup) {
+      t.userData.barGroup.lookAt(camera.position);
+      const ratio = Math.max(0, t.userData.hp / t.userData.maxHp);
+      t.userData.hpBar.scale.x = ratio;
+      const c = ratio > 0.6 ? 0x6ddc9a : ratio > 0.3 ? 0xffc94a : 0xff5d7a;
+      t.userData.hpBar.material.color.setHex(c);
+    }
+
     let nearest = null, ndist = Infinity;
     for (const e of state.enemies) {
       const d = t.position.distanceTo(e.position);
@@ -2307,6 +2445,11 @@ function updateTurrets(dt) {
       }
     }
   }
+  // Remove destroyed turrets from scene
+  state.turrets = state.turrets.filter(t => {
+    if (t.userData.dead) { scene.remove(t); return false; }
+    return true;
+  });
 }
 
 function updatePickups(dt) {
@@ -2437,7 +2580,7 @@ function tickFart(dt) {
   state.fartTimer -= dt;
   if (state.fartTimer <= 0) {
     spawnFartCloud();
-    state.fartTimer = 14 + Math.random() * 14;
+    state.fartTimer = 7 + Math.random() * 5; // 7-12s between farts
   }
 }
 
