@@ -269,3 +269,32 @@ button:active { transform: translateY(0); }
   color: #ff7eb3;
   font-weight: 700;
 }
+
+/* Source label on the highscores header (local / global) */
+.hs-source {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-left: 8px;
+}
+.hs-source.error  { color: #ff7eb3; opacity: 1; }
+.hs-source.global { color: #88c9ff; opacity: 0.85; }
+
+/* Submit to Global button (only shown on end screen) */
+.end-actions {
+  margin: 8px 0 4px;
+  display: flex; justify-content: center;
+}
+.submit-global {
+  background: linear-gradient(90deg, #88c9ff, #ff7eb3);
+  padding: 11px 28px;
+  font-size: 15px;
+}
+.submit-global.submitted {
+  background: rgba(255,255,255,0.08);
+  color: #b3a6cf;
+  cursor: default;
+  pointer-events: none;
+}

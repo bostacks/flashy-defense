@@ -2027,7 +2027,19 @@ function gameOver(victory = false) {
     </div>
     ${rankLabel ? `<div class="ss-rank">${rankLabel}</div>` : ''}
   `;
-  renderHighscores('hs-list-end', entry);
+  renderHighscores('hs-list-end', 'hs-source-end', entry);
+  // Re-fetch the global table in the background, then re-render
+  loadGlobalHighscores().then(() => renderHighscores('hs-list-end', 'hs-source-end', entry));
+
+  // Wire the "Submit to Global Leaderboard" button (each end-screen rebuild)
+  const submitBtn = document.getElementById('submit-global-btn');
+  if (submitBtn) {
+    submitBtn.onclick = () => {
+      window.open(buildSubmitUrl(entry), '_blank', 'noopener');
+      submitBtn.textContent = '✅ Opened submission — finish on GitHub';
+      submitBtn.classList.add('submitted');
+    };
+  }
 
   document.getElementById('end-screen').classList.remove('hidden');
 }
@@ -2036,32 +2048,92 @@ function gameOver(victory = false) {
 const HS_KEY = 'fd_highscores';
 const HS_MAX = 10;
 
-function loadHighscores() {
+// Repo coordinates for the global leaderboard. raw.githubusercontent.com
+// serves files with permissive CORS so the browser can fetch directly.
+const GH_OWNER = 'bostacks';
+const GH_REPO  = 'flashy-defense';
+const HS_URL   = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/main/HIGHSCORES.md`;
+const HS_TABLE_START = '<!-- HIGHSCORES_TABLE_START -->';
+const HS_TABLE_END   = '<!-- HIGHSCORES_TABLE_END -->';
+
+// Cache the parsed global list so re-renders don't re-fetch
+let globalScores = null;     // null = not loaded; array = loaded (possibly empty)
+let globalLoadError = null;  // string if last load failed
+
+function loadLocalHighscores() {
   try { return JSON.parse(localStorage.getItem(HS_KEY) || '[]'); }
   catch { return []; }
 }
 
 function saveHighscore(entry) {
-  const list = loadHighscores();
+  const list = loadLocalHighscores();
   list.push(entry);
   list.sort((a, b) => b.score - a.score);
   const trimmed = list.slice(0, HS_MAX);
   localStorage.setItem(HS_KEY, JSON.stringify(trimmed));
-  // Return 1-based rank, or 0 if not in top HS_MAX
   const idx = trimmed.indexOf(entry);
   return idx === -1 ? 0 : idx + 1;
 }
 
-function renderHighscores(elId, highlightEntry = null) {
-  const list = loadHighscores();
-  const el = document.getElementById(elId);
+// Parse the markdown table out of HIGHSCORES.md
+function parseGlobalTable(md) {
+  const start = md.indexOf(HS_TABLE_START);
+  const end   = md.indexOf(HS_TABLE_END);
+  if (start < 0 || end < 0) return [];
+  const block = md.slice(start + HS_TABLE_START.length, end);
+  const out = [];
+  for (const raw of block.split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('|')) continue;
+    const cells = line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+    if (cells.length < 6) continue;
+    if (cells[0] === 'Rank' || /^-+$/.test(cells[0])) continue;     // header / divider
+    if (cells[1].startsWith('_')) continue;                          // placeholder row
+    const score = parseInt(cells[2].replace(/,/g, ''), 10);
+    const wave  = parseInt(cells[3], 10);
+    const kills = parseInt(cells[4], 10);
+    if (Number.isNaN(score)) continue;
+    out.push({ name: cells[1], score, wave, kills, date: cells[5] });
+  }
+  return out;
+}
+
+async function loadGlobalHighscores() {
+  try {
+    // Cache-bust: avoid a stale CDN copy after a fresh action commit
+    const res = await fetch(`${HS_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    globalScores = parseGlobalTable(await res.text());
+    globalLoadError = null;
+  } catch (e) {
+    globalLoadError = e.message || String(e);
+    globalScores = [];
+  }
+}
+
+function renderHighscores(listId, sourceId, highlightEntry = null) {
+  const list = globalScores ?? loadLocalHighscores();
+  const usingGlobal = globalScores !== null && globalLoadError === null;
+
+  const sourceEl = sourceId && document.getElementById(sourceId);
+  if (sourceEl) {
+    if (globalScores === null)       { sourceEl.textContent = 'loading…'; sourceEl.className = 'hs-source'; }
+    else if (globalLoadError)        { sourceEl.textContent = 'local only (offline)'; sourceEl.className = 'hs-source error'; }
+    else                             { sourceEl.textContent = '🌐 global'; sourceEl.className = 'hs-source global'; }
+  }
+
+  const el = document.getElementById(listId);
   if (!el) return;
   if (list.length === 0) {
     el.innerHTML = '<li class="hs-empty">No scores yet — be the first!</li>';
     return;
   }
-  el.innerHTML = list.map((e, i) => {
-    const isNew = highlightEntry && e === highlightEntry;
+  el.innerHTML = list.slice(0, HS_MAX).map((e, i) => {
+    // Highlight the player's most recent submission by matching name+score
+    const isNew = highlightEntry &&
+      e.name === highlightEntry.name &&
+      e.score === highlightEntry.score &&
+      e.wave === highlightEntry.wave;
     return `<li class="${isNew ? 'hs-new' : ''}">
       <span class="hs-rank">${i + 1}.</span>
       <span class="hs-name">${escapeHtml(e.name)}</span>
@@ -2069,6 +2141,34 @@ function renderHighscores(elId, highlightEntry = null) {
       <span class="hs-wave">W${e.wave}</span>
     </li>`;
   }).join('');
+}
+
+// Build the GitHub "new issue" URL prefilled with the score data. The Action
+// in .github/workflows/highscores.yml will parse and append it.
+function buildSubmitUrl(entry) {
+  const data = JSON.stringify({
+    name:  entry.name,
+    score: entry.score,
+    wave:  entry.wave,
+    kills: entry.kills,
+  });
+  const body =
+`A new submission for the global leaderboard.
+
+<!-- highscore-data ${data} -->
+
+Score:  **${entry.score.toLocaleString()}**
+Wave:   ${entry.wave}
+Kills:  ${entry.kills}
+Player: ${entry.name}
+
+_Submitted from the in-game leaderboard form._`;
+  const params = new URLSearchParams({
+    title:  `Score: ${entry.score.toLocaleString()} by ${entry.name} (Wave ${entry.wave})`,
+    body,
+    labels: 'highscore',
+  });
+  return `https://github.com/${GH_OWNER}/${GH_REPO}/issues/new?${params}`;
 }
 
 function escapeHtml(s) {
@@ -2592,8 +2692,10 @@ const NAME_KEY = 'fd_player_name';
 const nameInput = document.getElementById('player-name');
 if (nameInput) nameInput.value = localStorage.getItem(NAME_KEY) || '';
 
-// Render any existing highscores on the start screen
-renderHighscores('hs-list-start');
+// Fetch global leaderboard, then render. We render immediately too so users
+// see local scores while the network call is in flight.
+renderHighscores('hs-list-start', 'hs-source-start');
+loadGlobalHighscores().then(() => renderHighscores('hs-list-start', 'hs-source-start'));
 
 function tryStart() {
   const name = (nameInput?.value || '').trim();

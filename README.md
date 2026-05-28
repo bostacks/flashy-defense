@@ -103,13 +103,39 @@ No installation required.
 
 ---
 
+## Global leaderboard
+
+Scores persist across sessions in `HIGHSCORES.md` at the repo root.
+
+How it works:
+
+1. After a game ends, the player clicks **📤 Submit to Global Leaderboard**.
+2. A pre-filled GitHub Issue opens in a new tab with a machine-readable
+   `<!-- highscore-data {...} -->` block in the body and the `highscore` label.
+3. On issue creation, `.github/workflows/highscores.yml` runs
+   `.github/scripts/update_highscores.py`, which parses the block, merges the
+   entry into `HIGHSCORES.md`, sorts top 50, commits the change, comments back
+   with the new rank, and closes the issue.
+4. Every game loads `HIGHSCORES.md` from `raw.githubusercontent.com` on start
+   so all players see the same leaderboard — no backend required.
+
+If the file can't be fetched (offline, repo private, network blip), the game
+falls back to a per-browser leaderboard in `localStorage`.
+
 ## Project structure
 
 ```
 flashy-defense/
-├── index.html   # HUD, screens, Three.js import map
-├── style.css    # Dark purple/pink night theme
-└── game.js      # Everything else (~2600 lines, single ES module)
+├── index.html              # Login gate
+├── game.html               # In-game HUD, start/end screens
+├── game.js                 # All gameplay logic (~2700 lines, single ES module)
+├── style.css               # Dark purple/pink night theme
+├── HIGHSCORES.md           # Durable global leaderboard (auto-updated)
+└── .github/
+    ├── workflows/
+    │   └── highscores.yml  # Action that processes submissions
+    └── scripts/
+        └── update_highscores.py  # Issue-body → markdown-table merger
 ```
 
 ---

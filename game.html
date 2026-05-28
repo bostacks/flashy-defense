@@ -75,8 +75,8 @@
       <button id="start-btn">Start Wave 1</button>
 
       <div class="highscores" id="highscores-start">
-        <h3>🏆 Top Scores</h3>
-        <ol id="hs-list-start"><li class="hs-empty">No scores yet — be the first!</li></ol>
+        <h3>🌐 Global Top Scores <span class="hs-source" id="hs-source-start">loading…</span></h3>
+        <ol id="hs-list-start"><li class="hs-empty">Loading global leaderboard…</li></ol>
       </div>
     </div>
 
@@ -84,8 +84,11 @@
       <h1 id="end-title">Game Over</h1>
       <p id="end-text"></p>
       <div class="score-summary" id="score-summary"></div>
+      <div class="end-actions" id="end-actions">
+        <button id="submit-global-btn" class="submit-global">📤 Submit to Global Leaderboard</button>
+      </div>
       <div class="highscores" id="highscores-end">
-        <h3>🏆 Top Scores</h3>
+        <h3>🌐 Global Top Scores <span class="hs-source" id="hs-source-end">loading…</span></h3>
         <ol id="hs-list-end"></ol>
       </div>
       <button onclick="location.reload()">Try Again</button>

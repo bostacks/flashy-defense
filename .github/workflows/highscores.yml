@@ -1,0 +1,68 @@
+name: Update high scores
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  process:
+    # Only run on issues labelled 'highscore'
+    if: contains(github.event.issue.labels.*.name, 'highscore')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Update HIGHSCORES.md
+        id: update
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python3 .github/scripts/update_highscores.py > result.json
+          cat result.json
+
+      - name: Commit the change
+        run: |
+          if [[ -n "$(git status --porcelain HIGHSCORES.md)" ]]; then
+            git config user.name "flashy-defense-bot"
+            git config user.email "bot@flashy-defense.invalid"
+            git add HIGHSCORES.md
+            git commit -m "highscore: ${{ github.event.issue.title }} (#${{ github.event.issue.number }})"
+            git push
+          else
+            echo "No change to HIGHSCORES.md (entry rejected or duplicate)"
+          fi
+
+      - name: Comment on the issue and close it
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('result.json', 'utf8'));
+            const issue_number = context.issue.number;
+            if (result.ok) {
+              const rankNote = result.rank ? `🏆 Ranked **#${result.rank}** on the global leaderboard!` : 'Not in top 50, but recorded.';
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number,
+                body: `Thanks, **${result.name}**! Your score of **${result.score.toLocaleString()}** (wave ${result.wave}) was added.\n\n${rankNote}\n\nSee the full leaderboard in [HIGHSCORES.md](../blob/main/HIGHSCORES.md).`
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number,
+                body: `Could not parse this submission: ${result.error}\n\nIssue bodies must contain a \`<!-- highscore-data { ... } -->\` block.`
+              });
+            }
+            await github.rest.issues.update({ ...context.repo, issue_number, state: 'closed' });
