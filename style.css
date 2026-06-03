@@ -157,6 +157,48 @@ button:active { transform: translateY(0); }
 
 .hidden { display: none !important; }
 
+/* Boss HP display — pinned at top, fixed width, big and visible */
+#boss-hud {
+  position: absolute;
+  top: 72px; left: 50%; transform: translateX(-50%);
+  width: 400px;
+  background: rgba(20, 12, 40, 0.85);
+  border: 2px solid rgba(255, 80, 80, 0.6);
+  border-radius: 12px;
+  padding: 8px 14px;
+  z-index: 6;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(255, 80, 80, 0.4);
+}
+#boss-hud-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ff6680;
+  letter-spacing: .1em;
+  margin-bottom: 4px;
+}
+#boss-hud-bar-track {
+  height: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+#boss-hud-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff5d7a, #ffd25f);
+  width: 100%;
+  transition: width 0.15s ease;
+  border-radius: 999px;
+}
+#boss-hud-hp {
+  font-size: 12px;
+  color: #fff;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
 /* ---------- Player name input on start screen ---------- */
 .name-input-wrap {
   display: flex; align-items: center; gap: 10px;
