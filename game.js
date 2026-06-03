@@ -703,6 +703,9 @@ const state = {
   playerName: '',
   kills: 0,
   totalSparklesEarned: 0,
+  // Boss fight state — every 5 waves a Godzilla stuffy appears solo
+  boss: null,
+  bossActive: false,
 };
 
 // ---------- Levels (re-tuned: more enemies, faster spawns, tougher mix) ----------
@@ -1136,6 +1139,116 @@ const MINION_COLORS = [
 
 function castShadows(root) {
   root.traverse(c => { if (c.isMesh) c.castShadow = true; });
+}
+
+// ---------- Godzilla boss stuffy (appears every 5 waves) ----------
+function makeGodzilla(scale = 1) {
+  const g = new THREE.Group();
+  const DARK  = 0x2f6b2a;
+  const MID   = 0x4a9c4a;
+  const BELLY = 0xc9e5a8;
+  const SPIKE = 0x7fc94f;
+  const EYE   = 0xffeb3b;
+
+  // Body (large oval)
+  const body = ball(scale * 1.8, MID, { roughness: 0.95 });
+  body.scale.set(1.1, 1.4, 1.3);
+  body.position.y = scale * 1.6;
+  g.add(body);
+  // Belly patch
+  const belly = ball(scale * 1.1, BELLY, { roughness: 0.9, castShadow: false });
+  belly.scale.set(0.85, 1.0, 0.45);
+  belly.position.set(0, scale * 1.5, scale * 1.05);
+  g.add(belly);
+
+  // Head
+  const head = ball(scale * 1.0, MID, { roughness: 0.95 });
+  head.scale.set(1.2, 0.9, 1.4);
+  head.position.set(0, scale * 3.2, scale * 0.5);
+  g.add(head);
+  // Snout extension (for laser origin)
+  const snout = ball(scale * 0.55, MID, { roughness: 0.95 });
+  snout.scale.set(1.0, 0.75, 1.4);
+  snout.position.set(0, scale * 3.05, scale * 1.4);
+  g.add(snout);
+
+  // Yellow glowing eyes
+  for (const sx of [-1, 1]) {
+    const eye = ball(scale * 0.16, EYE, { segments: 10, emissive: EYE, emissiveIntensity: 0.9 });
+    eye.position.set(sx * scale * 0.45, scale * 3.45, scale * 1.05);
+    g.add(eye);
+    const pupil = ball(scale * 0.07, 0x111111, { segments: 8 });
+    pupil.position.set(sx * scale * 0.45, scale * 3.45, scale * 1.18);
+    g.add(pupil);
+  }
+
+  // Sharp teeth (small white triangles along the mouth)
+  for (let i = -2; i <= 2; i++) {
+    const tooth = new THREE.Mesh(
+      new THREE.ConeGeometry(scale * 0.07, scale * 0.2, 4),
+      makeMat(0xffffff, { roughness: 0.6 })
+    );
+    tooth.rotation.x = Math.PI;
+    tooth.position.set(i * scale * 0.18, scale * 2.85, scale * 1.65);
+    g.add(tooth);
+  }
+
+  // Back spikes (rows of cones along spine)
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6;
+    const h = scale * (0.55 - Math.abs(t - 0.4) * 0.45);
+    const spike = new THREE.Mesh(
+      new THREE.ConeGeometry(scale * 0.22, h, 6),
+      makeMat(SPIKE, { roughness: 0.8 })
+    );
+    spike.position.set(0, scale * 2.7 + h / 2, scale * (0.8 - i * 0.55));
+    spike.rotation.x = -0.15 + (i - 3) * 0.05;
+    g.add(spike);
+  }
+
+  // Tail (segmented cones tapering back)
+  for (let i = 0; i < 5; i++) {
+    const seg = ball(scale * (0.55 - i * 0.08), MID, { segments: 10 });
+    seg.position.set(0, scale * (1.4 - i * 0.1), scale * (-1.4 - i * 0.6));
+    g.add(seg);
+  }
+
+  // Tiny T-rex arms
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Mesh(
+      new THREE.CylinderGeometry(scale * 0.18, scale * 0.22, scale * 0.7, 10),
+      makeMat(MID, { roughness: 0.95 })
+    );
+    arm.position.set(sx * scale * 1.4, scale * 2.0, scale * 0.6);
+    arm.rotation.z = sx * 0.5;
+    arm.rotation.x = -0.3;
+    g.add(arm);
+    const claw = ball(scale * 0.22, MID, { segments: 10 });
+    claw.position.set(sx * scale * 1.75, scale * 1.6, scale * 0.85);
+    g.add(claw);
+  }
+
+  // Big legs (stomp feet)
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(scale * 0.45, scale * 0.55, scale * 1.0, 12),
+      makeMat(MID, { roughness: 0.95 })
+    );
+    leg.position.set(sx * scale * 0.75, scale * 0.5, 0);
+    g.add(leg);
+    const foot = ball(scale * 0.55, MID, { segments: 12 });
+    foot.scale.set(1.1, 0.7, 1.4);
+    foot.position.set(sx * scale * 0.75, scale * 0.15, scale * 0.3);
+    g.add(foot);
+  }
+
+  // Plush hang-tag
+  const tag = box(scale * 0.3, scale * 0.36, scale * 0.04, 0xffffff);
+  tag.position.set(scale * 1.85, scale * 1.7, scale * 0.4);
+  tag.rotation.z = 0.3;
+  g.add(tag);
+
+  return g;
 }
 
 // Adds plush-toy touches to every stuffie: a hang-tag and a visible side seam.
@@ -1931,6 +2044,13 @@ function shootFromFlashy() {
     const d = Math.hypot(dx, dz);
     if (d < nearestDist) { nearestEnemy = e; nearestDist = d; }
   }
+  // Auto-aim onto the boss when present (larger snap range to match its size)
+  if (state.boss && !state.boss.userData.dead) {
+    const dx = state.boss.position.x - aimPoint.x;
+    const dz = state.boss.position.z - aimPoint.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 5.0 && d < nearestDist) { nearestEnemy = state.boss; nearestDist = d; }
+  }
   if (nearestEnemy) {
     target.set(
       nearestEnemy.position.x,
@@ -1989,12 +2109,241 @@ function startWave(n) {
 }
 
 function endWave() {
-  state.inIntermission = true;
-  state.intermissionTime = 10;
   state.sparkles += state.currentReward;
   state.totalSparklesEarned += state.currentReward;
+
+  // Every 5 waves, spawn the Godzilla boss instead of normal intermission
+  if (state.wave > 0 && state.wave % 5 === 0) {
+    spawnBoss();
+    return;
+  }
+
+  state.inIntermission = true;
+  state.intermissionTime = 10;
   showMessage(`✅ Wave ${state.wave} cleared! +${state.currentReward}✨  · Place turrets!`, 3.2);
   updateHUD();
+}
+
+// ---------- Boss fight (Godzilla) ----------
+function spawnBoss() {
+  // Clear any remaining regular enemies (the boss fights solo)
+  for (const e of state.enemies) scene.remove(e);
+  state.enemies = [];
+  state.enemiesToSpawn = 0;
+
+  const bossWaveIdx = Math.floor(state.wave / 5);     // 1, 2, 3, ...
+  const hp = 600 + (bossWaveIdx - 1) * 400;            // 600 / 1000 / 1400 / ...
+  const scale = 1.4 + (bossWaveIdx - 1) * 0.15;
+
+  const g = makeGodzilla(scale);
+  castShadows(g);
+
+  // HP bar floating above
+  const barGroup = new THREE.Group();
+  barGroup.position.y = scale * 4.8;
+  const barBg = new THREE.Mesh(
+    new THREE.PlaneGeometry(scale * 4, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0x111111 })
+  );
+  barGroup.add(barBg);
+  const barFg = new THREE.Mesh(
+    new THREE.PlaneGeometry(scale * 4, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xff5d7a })
+  );
+  barFg.position.z = 0.002;
+  barGroup.add(barFg);
+  g.add(barGroup);
+
+  // Spawn at the south edge (between the doorway and the orb)
+  g.position.set(0, 0, 13);
+
+  g.userData = {
+    type: 'godzilla', isBoss: true,
+    hp, maxHp: hp, color: 0x4a9c4a, size: scale * 1.8, speed: 2.4,
+    hpBar: barFg, barGroup, barWidth: scale * 4,
+    // Laser cycle: idle → charging → firing → cooldown
+    laserPhase: 'idle',
+    laserTimer: 2.5,                  // grace period before first attack
+    laserSight: null, laserBeam: null,
+    laserOrigin: new THREE.Vector3(0, scale * 3.05, 0), // mouth offset (local)
+    laserDir: new THREE.Vector3(0, 0, 1),
+  };
+  scene.add(g);
+
+  state.boss = g;
+  state.bossActive = true;
+  audio.over(); // dramatic boss roar
+  showMessage(`💀 GODZILLA STUFFY! Dodge the laser, ${state.playerName}!`, 3.5);
+  updateHUD();
+}
+
+function updateBoss(dt) {
+  if (!state.bossActive || !state.boss) return;
+  const g = state.boss;
+
+  // ---- Movement: slow follow Flashy, keep medium range to shoot lasers ----
+  const dx = flashy.position.x - g.position.x;
+  const dz = flashy.position.z - g.position.z;
+  const distH = Math.hypot(dx, dz);
+  const desiredRange = 8;
+  if (distH > desiredRange + 0.5) {
+    g.position.x += (dx / distH) * g.userData.speed * dt;
+    g.position.z += (dz / distH) * g.userData.speed * dt;
+  } else if (distH < desiredRange - 1.5) {
+    // Back off if Flashy got too close
+    g.position.x -= (dx / distH) * g.userData.speed * 0.5 * dt;
+    g.position.z -= (dz / distH) * g.userData.speed * 0.5 * dt;
+  }
+  if (distH > 0.001) g.rotation.y = Math.atan2(dx, dz);
+
+  // Keep boss inside the room
+  g.position.x = THREE.MathUtils.clamp(g.position.x, -ROOM.w / 2 + 3, ROOM.w / 2 - 3);
+  g.position.z = THREE.MathUtils.clamp(g.position.z, -ROOM.d / 2 + 3, ROOM.d / 2 - 3);
+
+  // ---- HP bar billboard ----
+  g.userData.barGroup.lookAt(camera.position);
+  const ratio = Math.max(0, g.userData.hp / g.userData.maxHp);
+  g.userData.hpBar.scale.x = ratio;
+  const c = ratio > 0.5 ? 0xff5d7a : ratio > 0.2 ? 0xffd25f : 0xff4444;
+  g.userData.hpBar.material.color.setHex(c);
+
+  // ---- Laser state machine ----
+  g.userData.laserTimer -= dt;
+  switch (g.userData.laserPhase) {
+    case 'idle':
+      if (g.userData.laserTimer <= 0) {
+        g.userData.laserPhase = 'charging';
+        g.userData.laserTimer = 1.6; // charge window — gives Flashy time to dodge
+        // Red warning beam (thin) that tracks Flashy in real time
+        const sight = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.05, 1, 8, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+        );
+        sight.rotation.x = Math.PI / 2;
+        scene.add(sight);
+        g.userData.laserSight = sight;
+        audio.orbHit();
+      }
+      break;
+    case 'charging':
+      // Continuously aim the warning beam at Flashy until firing
+      orientLaser(g.userData.laserSight, getMouthPos(g), flashy.position);
+      if (g.userData.laserTimer <= 0) {
+        // Lock target and fire the real beam
+        const origin = getMouthPos(g);
+        const dir = new THREE.Vector3()
+          .subVectors(flashy.position, origin);
+        dir.y = 0; dir.normalize();
+        // Remove the warning sight
+        if (g.userData.laserSight) { scene.remove(g.userData.laserSight); g.userData.laserSight = null; }
+        // Create the thick, lethal beam
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.55, 0.55, 1, 16, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0xffeb3b, transparent: true, opacity: 0.92, side: THREE.DoubleSide })
+        );
+        beam.rotation.x = Math.PI / 2;
+        scene.add(beam);
+        // Add a glow core
+        const core = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.25, 0.25, 1, 12, 1, true),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, side: THREE.DoubleSide })
+        );
+        core.rotation.x = Math.PI / 2;
+        beam.add(core);
+        scene.add(beam);
+        g.userData.laserBeam = beam;
+        g.userData.laserDir.copy(dir);
+        g.userData.laserOriginWorld = origin.clone();
+        // Orient & length to room edge
+        orientLaserFromDir(beam, origin, dir, 40);
+        g.userData.laserPhase = 'firing';
+        g.userData.laserTimer = 0.5; // beam visible / lethal for half a second
+        audio.shoot();
+      }
+      break;
+    case 'firing':
+      // Lethal check: distance from Flashy to the beam line
+      if (g.userData.laserBeam && state.running) {
+        const fp = flashy.position.clone();
+        const op = g.userData.laserOriginWorld;
+        const along = new THREE.Vector3().subVectors(fp, op);
+        const t = Math.max(0, along.dot(g.userData.laserDir));
+        const closest = op.clone().add(g.userData.laserDir.clone().multiplyScalar(t));
+        const perpDist = Math.hypot(closest.x - fp.x, closest.z - fp.z);
+        if (perpDist < 0.9) {
+          flashy.userData.hp = 0;
+          spawnHitBurst(flashy.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xffeb3b);
+          gameOver(false, 'flashy');
+          return;
+        }
+      }
+      if (g.userData.laserTimer <= 0) {
+        if (g.userData.laserBeam) { scene.remove(g.userData.laserBeam); g.userData.laserBeam = null; }
+        g.userData.laserPhase = 'cooldown';
+        g.userData.laserTimer = 2.2;
+      }
+      break;
+    case 'cooldown':
+      if (g.userData.laserTimer <= 0) {
+        g.userData.laserPhase = 'idle';
+        g.userData.laserTimer = 0.6;
+      }
+      break;
+  }
+
+  // ---- Death ----
+  if (g.userData.hp <= 0) {
+    // Big celebratory poof + sparkle reward
+    for (let i = 0; i < 5; i++) spawnDeathPoof(g.position, [0x4a9c4a, 0xffd25f, 0xff7eb3, 0xffffff, 0xffeb3b][i]);
+    scene.remove(g);
+    if (g.userData.laserSight) scene.remove(g.userData.laserSight);
+    if (g.userData.laserBeam)  scene.remove(g.userData.laserBeam);
+    state.boss = null;
+    state.bossActive = false;
+    const reward = 200 + bossWaveRewardBonus();
+    state.sparkles += reward;
+    state.totalSparklesEarned += reward;
+    state.kills += 1;
+    showMessage(`💥 GODZILLA DEFEATED! +${reward}✨`, 3.5);
+    audio.kill();
+    // Hand back to normal wave loop
+    state.inIntermission = true;
+    state.intermissionTime = 10;
+    updateHUD();
+  }
+}
+
+// Helper: world position of Godzilla's mouth (where lasers come from)
+function getMouthPos(g) {
+  const sc = g.userData.size / 1.8; // recover scale param
+  const local = new THREE.Vector3(0, sc * 3.05, sc * 1.6);
+  return local.clone().applyEuler(g.rotation).add(g.position);
+}
+
+// Helper: orient & stretch a unit-length cylinder from origin toward target
+function orientLaser(mesh, origin, target) {
+  const len = Math.hypot(target.x - origin.x, target.z - origin.z);
+  orientLaserFromDir(mesh, origin, new THREE.Vector3(target.x - origin.x, 0, target.z - origin.z).normalize(), len);
+}
+function orientLaserFromDir(mesh, origin, dir, length) {
+  // Cylinder is along its local Y; we already rotated it so local Y = +Z world.
+  // Easier path: use lookAt + scale.
+  mesh.position.copy(origin);
+  // Aim along dir using lookAt offset
+  const target = origin.clone().add(dir.clone().multiplyScalar(length));
+  // Move pivot to halfway, scale length on local Y
+  const mid = origin.clone().lerp(target, 0.5);
+  mesh.position.copy(mid);
+  mesh.scale.set(1, length, 1);
+  // Reset rotation, then point the cylinder's +Y at target
+  mesh.rotation.set(0, 0, 0);
+  const up = new THREE.Vector3(0, 1, 0);
+  const q = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
+  mesh.quaternion.copy(q);
+}
+
+function bossWaveRewardBonus() {
+  return Math.floor(state.wave / 5) * 100;
 }
 
 function gameOver(victory = false, reason = null) {
@@ -2481,6 +2830,7 @@ function updateProjectiles(dt) {
     // Floor / ceiling bounds
     if (p.position.y < 0 || p.position.y > 20) p.userData.dead = true;
 
+    let hit = false;
     for (const e of state.enemies) {
       const dx = p.position.x - e.position.x;
       const dz = p.position.z - e.position.z;
@@ -2501,7 +2851,22 @@ function updateProjectiles(dt) {
           audio.kill();
           updateHUD();
         }
+        hit = true;
         break;
+      }
+    }
+    // Boss collision — larger hitbox, no death loot here (handled in updateBoss)
+    if (!hit && state.boss && !p.userData.dead) {
+      const b = state.boss;
+      const bx = p.position.x - b.position.x;
+      const bz = p.position.z - b.position.z;
+      const by = p.position.y - (b.position.y + b.userData.size * 0.9);
+      const bd = Math.hypot(bx, by, bz);
+      if (bd < b.userData.size * 1.3 + p.userData.radius) {
+        b.userData.hp -= p.userData.damage;
+        p.userData.dead = true;
+        spawnHitBurst(p.position, p.material.color.getHex());
+        audio.hit();
       }
     }
   }
@@ -2529,6 +2894,11 @@ function updateTurrets(dt) {
     for (const e of state.enemies) {
       const d = t.position.distanceTo(e.position);
       if (d < t.userData.conf.range && d < ndist) { nearest = e; ndist = d; }
+    }
+    // Also consider the boss as a target
+    if (state.boss && !state.boss.userData.dead) {
+      const d = t.position.distanceTo(state.boss.position);
+      if (d < t.userData.conf.range && d < ndist) { nearest = state.boss; ndist = d; }
     }
     if (nearest) {
       const dir = new THREE.Vector3().subVectors(nearest.position, t.position);
@@ -2682,6 +3052,8 @@ function updateParticles(dt) {
 }
 
 function tickWave(dt) {
+  // During boss fight, regular waves are paused
+  if (state.bossActive) return;
   if (state.inIntermission) {
     state.intermissionTime -= dt;
     if (state.intermissionTime <= 0) {
@@ -2766,6 +3138,7 @@ function animate() {
     tickWave(dt);
     tickFart(dt);
     updateEnemies(dt);
+    updateBoss(dt);
     updateProjectiles(dt);
     updateTurrets(dt);
     updatePickups(dt);
