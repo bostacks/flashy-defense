@@ -706,6 +706,7 @@ const state = {
   // Boss fight state — every 5 waves a Godzilla stuffy appears solo
   boss: null,
   bossActive: false,
+  shakeAmount: 0,                   // camera shake decays over time
 };
 
 // ---------- Levels (re-tuned: more enemies, faster spawns, tougher mix) ----------
@@ -2019,6 +2020,9 @@ function placeTurretAtAim() {
 
 function shootFromFlashy() {
   if (flashy.userData.fireCooldown > 0) return;
+  // Block shooting while Godzilla is making his entrance
+  const bossPhase = state.boss?.userData?.laserPhase;
+  if (bossPhase === 'landing' || bossPhase === 'destroying') return;
   if (state.ammo <= 0) {
     // Out of ammo — brief click + nudge
     if (!shootFromFlashy._lastEmptyAt || performance.now() - shootFromFlashy._lastEmptyAt > 500) {
@@ -2154,51 +2158,55 @@ function spawnBoss() {
   barGroup.add(barFg);
   g.add(barGroup);
 
-  // Spawn at the south edge (between the doorway and the orb)
-  g.position.set(0, 0, 13);
+  // Spawn HIGH in the air — drops in dramatically
+  g.position.set(0, 24, 5);
 
   g.userData = {
     type: 'godzilla', isBoss: true,
     hp, maxHp: hp, color: 0x4a9c4a, size: scale * 1.8, speed: 2.4,
     hpBar: barFg, barGroup, barWidth: scale * 4,
-    // Laser cycle: idle → charging → firing → cooldown
-    laserPhase: 'idle',
-    laserTimer: 2.5,                  // grace period before first attack
+    // Phases: landing → destroying → idle → charging → firing → cooldown → idle...
+    laserPhase: 'landing',
+    laserTimer: 0,
     laserSight: null, laserBeam: null,
     laserOrigin: new THREE.Vector3(0, scale * 3.05, 0), // mouth offset (local)
     laserDir: new THREE.Vector3(0, 0, 1),
+    vy: 0,                            // landing velocity
+    destroyQueue: [],                 // turrets to zap after landing
   };
   scene.add(g);
 
   state.boss = g;
   state.bossActive = true;
   audio.over(); // dramatic boss roar
-  showMessage(`💀 GODZILLA STUFFY! Dodge the laser, ${state.playerName}!`, 3.5);
+  showMessage(`💀 GODZILLA INCOMING!`, 2.8);
   updateHUD();
 }
 
 function updateBoss(dt) {
   if (!state.bossActive || !state.boss) return;
   const g = state.boss;
+  const phase = g.userData.laserPhase;
 
-  // ---- Movement: slow follow Flashy, keep medium range to shoot lasers ----
-  const dx = flashy.position.x - g.position.x;
-  const dz = flashy.position.z - g.position.z;
-  const distH = Math.hypot(dx, dz);
-  const desiredRange = 8;
-  if (distH > desiredRange + 0.5) {
-    g.position.x += (dx / distH) * g.userData.speed * dt;
-    g.position.z += (dz / distH) * g.userData.speed * dt;
-  } else if (distH < desiredRange - 1.5) {
-    // Back off if Flashy got too close
-    g.position.x -= (dx / distH) * g.userData.speed * 0.5 * dt;
-    g.position.z -= (dz / distH) * g.userData.speed * 0.5 * dt;
+  // During landing & destroying, skip the normal follow-Flashy movement
+  const inEntrance = phase === 'landing' || phase === 'destroying';
+  if (!inEntrance) {
+    // ---- Movement: slow follow Flashy, keep medium range to shoot lasers ----
+    const dx = flashy.position.x - g.position.x;
+    const dz = flashy.position.z - g.position.z;
+    const distH = Math.hypot(dx, dz);
+    const desiredRange = 8;
+    if (distH > desiredRange + 0.5) {
+      g.position.x += (dx / distH) * g.userData.speed * dt;
+      g.position.z += (dz / distH) * g.userData.speed * dt;
+    } else if (distH < desiredRange - 1.5) {
+      g.position.x -= (dx / distH) * g.userData.speed * 0.5 * dt;
+      g.position.z -= (dz / distH) * g.userData.speed * 0.5 * dt;
+    }
+    if (distH > 0.001) g.rotation.y = Math.atan2(dx, dz);
+    g.position.x = THREE.MathUtils.clamp(g.position.x, -ROOM.w / 2 + 3, ROOM.w / 2 - 3);
+    g.position.z = THREE.MathUtils.clamp(g.position.z, -ROOM.d / 2 + 3, ROOM.d / 2 - 3);
   }
-  if (distH > 0.001) g.rotation.y = Math.atan2(dx, dz);
-
-  // Keep boss inside the room
-  g.position.x = THREE.MathUtils.clamp(g.position.x, -ROOM.w / 2 + 3, ROOM.w / 2 - 3);
-  g.position.z = THREE.MathUtils.clamp(g.position.z, -ROOM.d / 2 + 3, ROOM.d / 2 - 3);
 
   // ---- HP bar billboard ----
   g.userData.barGroup.lookAt(camera.position);
@@ -2210,6 +2218,78 @@ function updateBoss(dt) {
   // ---- Laser state machine ----
   g.userData.laserTimer -= dt;
   switch (g.userData.laserPhase) {
+    case 'landing': {
+      // Fall under gravity until y hits 0
+      g.userData.vy -= 35 * dt;
+      g.position.y += g.userData.vy * dt;
+      if (g.position.y <= 0) {
+        g.position.y = 0;
+        g.userData.vy = 0;
+        // Camera shake + dust ring + roar
+        state.shakeAmount = 1.6;
+        audio.over();
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2;
+          spawnDeathPoof(
+            g.position.clone().add(new THREE.Vector3(Math.cos(a) * 3, 0, Math.sin(a) * 3)),
+            0xc8b89c
+          );
+        }
+        // Build destruction queue: ~half of the existing turrets, randomly chosen
+        const live = state.turrets.filter(t => !t.userData.dead);
+        if (live.length > 0) {
+          const shuffled = live.slice().sort(() => Math.random() - 0.5);
+          const count = Math.max(1, Math.ceil(shuffled.length / 2));
+          g.userData.destroyQueue = shuffled.slice(0, count);
+          g.userData.laserPhase = 'destroying';
+          g.userData.laserTimer = 0.7; // brief pause before first zap
+          showMessage(`💥 GODZILLA WIPES YOUR DEFENSES!`, 2.8);
+        } else {
+          // No turrets to destroy — go straight to combat
+          g.userData.laserPhase = 'idle';
+          g.userData.laserTimer = 1.0;
+          showMessage(`💀 GODZILLA STUFFY! Dodge the laser, ${state.playerName}!`, 3);
+        }
+      }
+      break;
+    }
+    case 'destroying': {
+      if (g.userData.laserTimer > 0) break;
+      // Drop any turrets that died meanwhile (e.g. from a prior zap)
+      while (g.userData.destroyQueue.length > 0 && g.userData.destroyQueue[0].userData.dead) {
+        g.userData.destroyQueue.shift();
+      }
+      if (g.userData.destroyQueue.length === 0) {
+        g.userData.laserPhase = 'idle';
+        g.userData.laserTimer = 0.6;
+        showMessage(`💀 Now face me, ${state.playerName}!`, 2.5);
+        break;
+      }
+      // Aim Godzilla at the next victim, fire a quick zap, destroy it
+      const target = g.userData.destroyQueue.shift();
+      const dxT = target.position.x - g.position.x;
+      const dzT = target.position.z - g.position.z;
+      g.rotation.y = Math.atan2(dxT, dzT);
+      const origin = getMouthPos(g);
+      const dir = new THREE.Vector3().subVectors(target.position, origin);
+      dir.y = 0; dir.normalize();
+      const length = Math.hypot(target.position.x - origin.x, target.position.z - origin.z);
+      // Quick visible beam
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.45, 1, 14, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xffeb3b, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+      );
+      orientLaserFromDir(beam, origin, dir, length);
+      scene.add(beam);
+      setTimeout(() => scene.remove(beam), 350);
+      // Destroy the turret
+      target.userData.dead = true;
+      spawnDeathPoof(target.position, target.userData.conf.color);
+      audio.hit();
+      audio.kill();
+      g.userData.laserTimer = 0.55; // pause before next zap
+      break;
+    }
     case 'idle':
       if (g.userData.laserTimer <= 0) {
         g.userData.laserPhase = 'charging';
@@ -2577,13 +2657,19 @@ function showMessage(text, time = 2) {
 
 // ---------- Update loop ----------
 function updatePlayer(dt) {
+  // Lock player input while Godzilla is making his entrance
+  const bossPhase = state.boss?.userData?.laserPhase;
+  const playerLocked = bossPhase === 'landing' || bossPhase === 'destroying';
+
   // Top-down WASD: world-space movement (camera doesn't rotate with player)
   // W = away from screen (-Z), S = toward (+Z), A/D = left/right (-X/+X)
   const move = new THREE.Vector3();
-  if (keys['w']) move.z -= 1;
-  if (keys['s']) move.z += 1;
-  if (keys['a']) move.x -= 1;
-  if (keys['d']) move.x += 1;
+  if (!playerLocked) {
+    if (keys['w']) move.z -= 1;
+    if (keys['s']) move.z += 1;
+    if (keys['a']) move.x -= 1;
+    if (keys['d']) move.x += 1;
+  }
 
   const moving = move.lengthSq() > 0;
   if (moving) {
@@ -2649,6 +2735,13 @@ function updatePlayer(dt) {
   camera.position.lerp(desired, 0.12);
   const tgt = flashy.position.clone(); tgt.y = 1;
   camera.lookAt(tgt);
+  // Camera shake — applied after follow so it's a pure offset; decays toward 0
+  if (state.shakeAmount > 0) {
+    camera.position.x += (Math.random() - 0.5) * state.shakeAmount * 2;
+    camera.position.y += (Math.random() - 0.5) * state.shakeAmount * 1.2;
+    camera.position.z += (Math.random() - 0.5) * state.shakeAmount * 2;
+    state.shakeAmount = Math.max(0, state.shakeAmount - dt * 3);
+  }
 
   // Aim point: raycast from mouse cursor onto the floor plane
   raycaster.setFromCamera(mouse, camera);
@@ -2856,17 +2949,22 @@ function updateProjectiles(dt) {
       }
     }
     // Boss collision — larger hitbox, no death loot here (handled in updateBoss)
+    // Boss is invulnerable during entrance phases (landing + destroying)
     if (!hit && state.boss && !p.userData.dead) {
       const b = state.boss;
-      const bx = p.position.x - b.position.x;
-      const bz = p.position.z - b.position.z;
-      const by = p.position.y - (b.position.y + b.userData.size * 0.9);
-      const bd = Math.hypot(bx, by, bz);
-      if (bd < b.userData.size * 1.3 + p.userData.radius) {
-        b.userData.hp -= p.userData.damage;
-        p.userData.dead = true;
-        spawnHitBurst(p.position, p.material.color.getHex());
-        audio.hit();
+      const bp = b.userData.laserPhase;
+      const invulnerable = bp === 'landing' || bp === 'destroying';
+      if (!invulnerable) {
+        const bx = p.position.x - b.position.x;
+        const bz = p.position.z - b.position.z;
+        const by = p.position.y - (b.position.y + b.userData.size * 0.9);
+        const bd = Math.hypot(bx, by, bz);
+        if (bd < b.userData.size * 1.3 + p.userData.radius) {
+          b.userData.hp -= p.userData.damage;
+          p.userData.dead = true;
+          spawnHitBurst(p.position, p.material.color.getHex());
+          audio.hit();
+        }
       }
     }
   }
@@ -2895,10 +2993,14 @@ function updateTurrets(dt) {
       const d = t.position.distanceTo(e.position);
       if (d < t.userData.conf.range && d < ndist) { nearest = e; ndist = d; }
     }
-    // Also consider the boss as a target
+    // Also consider the boss as a target (skip during entrance — invulnerable)
     if (state.boss && !state.boss.userData.dead) {
-      const d = t.position.distanceTo(state.boss.position);
-      if (d < t.userData.conf.range && d < ndist) { nearest = state.boss; ndist = d; }
+      const bp = state.boss.userData.laserPhase;
+      const invulnerable = bp === 'landing' || bp === 'destroying';
+      if (!invulnerable) {
+        const d = t.position.distanceTo(state.boss.position);
+        if (d < t.userData.conf.range && d < ndist) { nearest = state.boss; ndist = d; }
+      }
     }
     if (nearest) {
       const dir = new THREE.Vector3().subVectors(nearest.position, t.position);
