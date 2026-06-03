@@ -2367,7 +2367,7 @@ function updateBoss(dt) {
     case 'idle':
       if (g.userData.laserTimer <= 0) {
         g.userData.laserPhase = 'charging';
-        g.userData.laserTimer = 1.6; // charge window — gives Flashy time to dodge
+        g.userData.laserTimer = 2.4; // longer charge — fair dodge window
         // Red warning beam (thin) that tracks Flashy in real time
         const sight = new THREE.Mesh(
           new THREE.CylinderGeometry(0.05, 0.05, 1, 8, 1, true),
@@ -2411,36 +2411,44 @@ function updateBoss(dt) {
         // Orient & length to room edge
         orientLaserFromDir(beam, origin, dir, 40);
         g.userData.laserPhase = 'firing';
-        g.userData.laserTimer = 0.5; // beam visible / lethal for half a second
+        g.userData.laserTimer = 0.45; // beam visible / damaging window
+        g.userData.laserDamaged = false; // each laser hits at most once
         audio.shoot();
       }
       break;
     case 'firing':
-      // Lethal check: distance from Flashy to the beam line
-      if (g.userData.laserBeam && state.running) {
+      // Damage check: distance from Flashy to the beam line.
+      // Heavy chunk damage, not instant kill, and only once per beam.
+      if (g.userData.laserBeam && state.running && !g.userData.laserDamaged) {
         const fp = flashy.position.clone();
         const op = g.userData.laserOriginWorld;
         const along = new THREE.Vector3().subVectors(fp, op);
         const t = Math.max(0, along.dot(g.userData.laserDir));
         const closest = op.clone().add(g.userData.laserDir.clone().multiplyScalar(t));
         const perpDist = Math.hypot(closest.x - fp.x, closest.z - fp.z);
-        if (perpDist < 0.9) {
-          flashy.userData.hp = 0;
+        if (perpDist < 0.55) {
+          g.userData.laserDamaged = true;
+          flashy.userData.hp -= 50;
           spawnHitBurst(flashy.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xffeb3b);
-          gameOver(false, 'flashy');
-          return;
+          spawnHitBurst(flashy.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff3344);
+          audio.orbHit();
+          showMessage(`💥 Laser hit! -50 HP`, 1.5);
+          if (flashy.userData.hp <= 0) {
+            gameOver(false, 'flashy');
+            return;
+          }
         }
       }
       if (g.userData.laserTimer <= 0) {
         if (g.userData.laserBeam) { scene.remove(g.userData.laserBeam); g.userData.laserBeam = null; }
         g.userData.laserPhase = 'cooldown';
-        g.userData.laserTimer = 2.2;
+        g.userData.laserTimer = 3.2; // longer cooldown — more breathing room
       }
       break;
     case 'cooldown':
       if (g.userData.laserTimer <= 0) {
         g.userData.laserPhase = 'idle';
-        g.userData.laserTimer = 0.6;
+        g.userData.laserTimer = 0.8;
       }
       break;
   }
